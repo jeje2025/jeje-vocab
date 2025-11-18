@@ -1,0 +1,369 @@
+@import url('https://cdn.jsdelivr.net/gh/sunn-us/SUIT/fonts/variable/woff2/SUIT-Variable.css');
+
+.pdf-print-root {
+  font-family: 'SUIT', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #0f172a;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.pdf-print-root strong,
+.pdf-print-root b {
+  font-weight: 700;
+}
+
+.pdf-print-root em,
+.pdf-print-root i {
+  font-style: italic;
+}
+
+.pdf-print-root .a4-page {
+  width: 210mm;
+  min-height: 297mm;
+  max-width: 210mm;
+  margin: 0 auto 12px;
+  padding: 17mm 20mm 20mm;
+  background: #ffffff;
+  box-shadow: 0 18px 40px rgba(30, 41, 59, 0.08);
+  border-radius: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+}
+
+.pdf-print-root .page-header,
+.pdf-print-root .page-footer {
+  width: 100%;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 12px;
+  color: #475569;
+  letter-spacing: -0.01em;
+}
+
+.pdf-print-root .page-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdf-print-root .page-footer {
+  margin-top: auto;
+}
+
+.pdf-print-root table {
+  width: 100%;
+  border-collapse: collapse;
+  color: inherit;
+}
+
+.pdf-print-root td,
+.pdf-print-root th {
+  vertical-align: top;
+}
+
+.pdf-print-root .vocabulary-card {
+  border: 1px solid rgba(148, 163, 184, 0.45);
+  border-radius: 20px;
+  padding: 18px 24px;
+  background: rgba(255, 255, 255, 0.98);
+}
+
+.pdf-print-root .card-meta {
+  text-transform: uppercase;
+  font-size: 8px;
+  letter-spacing: 0.08em;
+  color: #64748b;
+}
+
+.pdf-print-root .quiz-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.pdf-print-root .quiz-card {
+  border: 1px solid rgba(148, 163, 184, 0.55);
+  border-radius: 16px;
+  padding: 16px 20px;
+  background: rgba(248, 250, 253, 0.9);
+  min-height: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdf-print-root .quiz-card h4 {
+  font-size: 13px;
+  font-weight: 600;
+  color: #0f172a;
+  margin: 0;
+}
+
+.pdf-print-root .quiz-card p,
+.pdf-print-root .quiz-card li {
+  font-size: 11px;
+  color: #475569;
+  margin: 0;
+}
+
+.pdf-print-root .answer-key {
+  border: 1px dashed rgba(99, 102, 241, 0.5);
+  border-radius: 14px;
+  padding: 16px 20px;
+  background: rgba(238, 242, 255, 0.8);
+}
+
+.pdf-print-root .answer-key h4 {
+  font-size: 12px;
+  font-weight: 600;
+  color: #312e81;
+  margin-bottom: 10px;
+}
+
+.pdf-print-root .answer-key li {
+  font-size: 11px;
+  line-height: 1.6;
+  color: #1e1b4b;
+}
+
+.pdf-print-root .page-container {
+  width: 210mm;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.pdf-print-root .table-header {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #94a3b8;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.45);
+  padding-bottom: 8px;
+  margin-bottom: 12px;
+}
+
+.pdf-print-root .table-header span {
+  display: inline-block;
+  margin-right: 24px;
+}
+
+.pdf-print-root .table-row {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25);
+  padding: 12px 0;
+}
+
+.pdf-print-root .table-row:last-child {
+  border-bottom: none;
+}
+
+.pdf-print-root .synonym-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: rgba(226, 232, 240, 0.8);
+  color: #475569;
+  border: 1px solid rgba(148, 163, 184, 0.45);
+}
+
+.pdf-print-root .print-metadata {
+  font-size: 10px;
+  color: #94a3b8;
+  letter-spacing: 0.1em;
+}
+
+.pdf-print-root .page-number-bottom-right {
+  position: absolute;
+  bottom: 10mm;
+  right: 20mm;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+/* 화면에서는 인쇄 영역 숨기기 - 렌더링은 하되 보이지 않게 */
+#pdf-print-area {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 210mm;
+  height: 0;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 12mm 0;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    background-color: #ffffff !important;
+    background-image: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    print-color-adjust: exact;
+    -webkit-print-color-adjust: exact;
+  }
+
+  /* 모든 배경 요소 제거 */
+  body * {
+    background-image: none !important;
+  }
+
+  /* 앱 배경 제거 */
+  .app-background,
+  [class*="gradient"],
+  [class*="background"] {
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+  }
+
+  /* 모든 것을 흰색 배경으로 */
+  .pdf-print-root,
+  .pdf-print-root * {
+    background-color: white !important;
+  }
+
+  /* 테이블/카드의 특정 배경은 유지 */
+  .pdf-print-root .bg-slate-100\/80,
+  .pdf-print-root [class*="bg-slate"] {
+    background-color: #f1f5f9 !important;
+  }
+
+  /* 인쇄 시 모든 텍스트를 선명하게 - 회색을 검정으로 */
+  .pdf-print-root .text-gray-400,
+  .pdf-print-root .text-gray-500,
+  .pdf-print-root .text-gray-600,
+  .pdf-print-root .text-slate-500,
+  .pdf-print-root .text-slate-600,
+  .pdf-print-root [class*="text-gray"],
+  .pdf-print-root [class*="text-slate"] {
+    color: #1f2937 !important; /* gray-800 - 진한 회색 */
+  }
+
+  .pdf-print-root .text-black,
+  .pdf-print-root [class*="font-bold"] {
+    color: #000000 !important;
+  }
+
+  /* 배지와 작은 텍스트는 더 진하게 */
+  .pdf-print-root .uppercase,
+  .pdf-print-root .tracking-tight {
+    color: #374151 !important; /* gray-700 */
+  }
+
+  /* 인쇄용 레이아웃만 표시 */
+  #pdf-print-area {
+    position: static !important;
+    left: auto !important;
+    width: 100% !important;
+    height: auto !important;
+    overflow: visible !important;
+    opacity: 1 !important;
+    margin: 0 auto !important;
+    padding: 0 !important;
+    display: block !important;
+    background: white !important;
+  }
+
+  body.pdf-print-page .app-print-hidden {
+    display: none !important;
+    height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* 루트 요소의 배경도 제거 */
+  #root {
+    background: white !important;
+    background-color: white !important;
+    background-image: none !important;
+  }
+
+  #pdf-print-layout {
+    background: #fff;
+  }
+
+  .pdf-print-root .page-container {
+    width: 100%;
+    margin: 0 auto;
+    gap: 0;
+  }
+
+  .pdf-print-root .a4-page {
+    margin: 0;
+    padding: 17mm 20mm 20mm;
+    box-shadow: none;
+    border-radius: 0;
+    width: 100%;
+    min-height: auto !important;
+    max-height: none !important;
+    height: auto !important;
+    box-sizing: border-box;
+    position: relative;
+    page-break-after: auto !important;
+    break-after: auto !important;
+    display: block !important;
+  }
+
+  .pdf-print-root .page-content {
+    display: block !important;
+  }
+
+  .pdf-print-root .vocabulary-card {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+    page-break-before: auto !important;
+    page-break-after: auto !important;
+    margin-bottom: 10px;
+    display: block !important;
+    overflow: visible !important;
+  }
+
+  .pdf-print-root table {
+    page-break-inside: auto;
+  }
+
+  .pdf-print-root tr {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  .pdf-print-root .quiz-card,
+  .pdf-print-root .answer-key {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  /* 모든 카드/행이 페이지 경계에서 잘리지 않도록 */
+  .pdf-print-root .page-content > * {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  /* 테이블 헤더 반복 */
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+}

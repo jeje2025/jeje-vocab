@@ -1,0 +1,117 @@
+.admission-admin-root {
+    min-height: 100vh;
+    background: linear-gradient(135deg, #f4e8ff, #f0f9ff);
+    font-family: 'SUIT', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #1e1b4b;
+    padding-bottom: 4rem;
+  }
+
+  .admission-card {
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.2);
+    box-shadow: 0 12px 40px rgba(79, 70, 229, 0.08);
+    padding: 1.75rem;
+  }
+
+  .admission-section-title {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #5b21b6;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .admission-button-primary {
+    background: linear-gradient(90deg, #7c3aed, #a855f7);
+    color: white;
+    border: none;
+    border-radius: 999px;
+    padding: 0.6rem 1.5rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+  }
+
+  .admission-button-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .admission-button-primary:not(:disabled):hover {
+    transform: translateY(-1px);
+    box-shadow: 0 12px 20px rgba(89, 28, 135, 0.2);
+  }
+
+  .admission-chip {
+    padding: 0.25rem 0.75rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    background: rgba(109, 40, 217, 0.12);
+    color: #6d28d9;
+  }
+
+  .admission-grid {
+    display: grid;
+    gap: 1.25rem;
+  }
+
+  .admission-grid.two {
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+
+  .admission-matrix-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+
+  .admission-matrix-table th,
+  .admission-matrix-table td {
+    padding: 0.65rem;
+    border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+    text-align: center;
+  }
+
+  .admission-matrix-table th {
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #6366f1;
+  }
+
+  .admission-matrix-status {
+    font-size: 1rem;
+    cursor: pointer;
+  }
+
+  .admission-calendar {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.9rem;
+  }
+
+  .admission-calendar th {
+    color: #6b21a8;
+    font-weight: 600;
+    padding: 0.5rem 0;
+  }
+
+  .admission-calendar td {
+    width: calc(100% / 7);
+    padding: 0.75rem 0.25rem;
+    text-align: center;
+    border-radius: 12px;
+  }
+
+  .admission-calendar .has-event {
+    border: 1px solid rgba(124, 58, 237, 0.3);
+  }
+
+  .admission-event-dot {
+    display: inline-block;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    margin-right: 4px;
+  }

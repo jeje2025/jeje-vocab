@@ -1,0 +1,10 @@
+{
+  "imports": {
+    "Hono": "npm:hono",
+    "cors": "npm:hono/cors",
+    "logger": "npm:hono/logger"
+  },
+  "deploy": {
+    "entrypoint": "supabase/functions/server/index.ts"
+  }
+}
