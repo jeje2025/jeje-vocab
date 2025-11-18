@@ -853,8 +853,10 @@ app.get("/user-vocabularies/:id", async (c) => {
     }
 
     const id = c.req.param('id');
+    const unitParam = c.req.query('unit'); // Get unit number from query parameter
+    const requestedUnit = unitParam ? parseInt(unitParam) : undefined;
     const supabase = getSupabaseClient();
-    
+
     // Get vocabulary details
     const { data: vocabulary, error: vocabError } = await supabase
       .from('user_vocabularies')
@@ -872,24 +874,32 @@ app.get("/user-vocabularies/:id", async (c) => {
         .select('*')
         .eq('id', id)
         .maybeSingle();
-      
+
       if (sharedVocab) {
-        return c.json({ 
+        return c.json({
           error: 'This is a shared vocabulary. Please add it to your collection first.',
           isSharedVocabulary: true
         }, 403);
       }
-      
+
       return c.json({ error: 'Vocabulary not found' }, 404);
     }
 
-    // Get words
-    const { data: rawWords, error: wordsError } = await supabase
+    // Get words - filter by unit if specified
+    let wordsQuery = supabase
       .from('user_words')
       .select('*')
       .eq('vocabulary_id', id)
-      .eq('user_id', userId)
-      .order('order_index', { ascending: true });
+      .eq('user_id', userId);
+
+    // Filter by unit number if specified
+    if (requestedUnit) {
+      wordsQuery = wordsQuery.eq('unit_number', requestedUnit);
+    }
+
+    wordsQuery = wordsQuery.order('order_index', { ascending: true });
+
+    const { data: rawWords, error: wordsError } = await wordsQuery;
 
     if (wordsError) throw wordsError;
 
@@ -910,8 +920,12 @@ app.get("/user-vocabularies/:id", async (c) => {
       words: units[parseInt(unitNum)]
     }));
 
-    console.log(`📚 Fetched vocabulary ${id} with ${words.length} words in ${unitsArray.length} units`);
-    return c.json({ 
+    const logMessage = requestedUnit
+      ? `📚 Fetched vocabulary ${id} unit ${requestedUnit} with ${words.length} words`
+      : `📚 Fetched vocabulary ${id} with ${words.length} words in ${unitsArray.length} units`;
+    console.log(logMessage);
+
+    return c.json({
       vocabulary,
       units: unitsArray,
       words
@@ -1265,11 +1279,203 @@ app.delete("/admin/shared-vocabularies/:id", async (c) => {
   try {
     const id = c.req.param('id');
     const supabase = getSupabaseClient();
-    const { error } = await supabase.from('shared_vocabularies').delete().eq('id', id);
-    if (error) throw error;
+
+    // First delete all words associated with this vocabulary
+    const { error: wordsError } = await supabase
+      .from('shared_words')
+      .delete()
+      .eq('vocabulary_id', id);
+
+    if (wordsError) {
+      console.error('❌ Error deleting words:', wordsError);
+      throw wordsError;
+    }
+
+    // Then delete the vocabulary itself
+    const { error: vocabError } = await supabase
+      .from('shared_vocabularies')
+      .delete()
+      .eq('id', id);
+
+    if (vocabError) {
+      console.error('❌ Error deleting vocabulary:', vocabError);
+      throw vocabError;
+    }
+
+    console.log(`✅ Deleted vocabulary ${id} and its words`);
     return c.json({ success: true });
   } catch (error) {
+    console.error('❌ Delete error:', error);
     return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Merge vocabularies
+app.post("/admin/shared-vocabularies/merge", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { targetVocabId, sourceVocabIds, newTitle } = body;
+
+    console.log('🔀 Merging vocabularies:', { targetVocabId, sourceVocabIds, newTitle });
+
+    // Validate input
+    if (!targetVocabId || !sourceVocabIds || !Array.isArray(sourceVocabIds) || sourceVocabIds.length === 0) {
+      console.error('❌ Invalid input:', { targetVocabId, sourceVocabIds });
+      return c.json({ error: 'Invalid input: targetVocabId and sourceVocabIds are required' }, 400);
+    }
+
+    const supabase = getSupabaseClient();
+
+    // 1. Get target vocabulary
+    console.log('📥 Fetching target vocabulary:', targetVocabId);
+    const { data: targetVocab, error: targetError } = await supabase
+      .from('shared_vocabularies')
+      .select('*')
+      .eq('id', targetVocabId)
+      .single();
+
+    if (targetError) {
+      console.error('❌ Error fetching target vocabulary:', targetError);
+      return c.json({ error: `Target vocabulary error: ${targetError.message}` }, 400);
+    }
+
+    if (!targetVocab) {
+      console.error('❌ Target vocabulary not found:', targetVocabId);
+      return c.json({ error: 'Target vocabulary not found' }, 404);
+    }
+
+    console.log('✅ Target vocabulary found:', targetVocab.title);
+
+    // 2. Get all source vocabularies
+    console.log('📥 Fetching source vocabularies:', sourceVocabIds);
+    const { data: sourceVocabs, error: sourceError } = await supabase
+      .from('shared_vocabularies')
+      .select('*')
+      .in('id', sourceVocabIds);
+
+    if (sourceError) {
+      console.error('❌ Error fetching source vocabularies:', sourceError);
+      return c.json({ error: `Source vocabularies error: ${sourceError.message}` }, 400);
+    }
+
+    if (!sourceVocabs || sourceVocabs.length === 0) {
+      console.error('❌ No source vocabularies found');
+      return c.json({ error: 'Source vocabularies not found' }, 404);
+    }
+
+    console.log('✅ Source vocabularies found:', sourceVocabs.length);
+
+    // 3. Get target vocabulary words (with high limit to avoid truncation)
+    const { data: targetWords, error: targetWordsError } = await supabase
+      .from('shared_words')
+      .select('*')
+      .eq('vocabulary_id', targetVocabId)
+      .order('order_index', { ascending: true })
+      .limit(100000);
+
+    if (targetWordsError) {
+      console.error('❌ Error fetching target words:', targetWordsError);
+      return c.json({ error: `Target words error: ${targetWordsError.message}` }, 500);
+    }
+
+    console.log('📝 Starting with', targetWords?.length || 0, 'words from target');
+
+    // 4. Get all source vocabulary words (with high limit to avoid truncation)
+    const { data: sourceWords, error: sourceWordsError } = await supabase
+      .from('shared_words')
+      .select('*')
+      .in('vocabulary_id', sourceVocabIds)
+      .order('vocabulary_id, order_index', { ascending: true })
+      .limit(100000);
+
+    if (sourceWordsError) {
+      console.error('❌ Error fetching source words:', sourceWordsError);
+      return c.json({ error: `Source words error: ${sourceWordsError.message}` }, 500);
+    }
+
+    console.log('📝 Adding', sourceWords?.length || 0, 'words from source vocabularies');
+
+    // 5. Update source words to point to target vocabulary
+    let currentOrderIndex = (targetWords?.length || 0) + 1;
+    const wordsToUpdate: any[] = [];
+
+    if (sourceWords && sourceWords.length > 0) {
+      for (const word of sourceWords) {
+        wordsToUpdate.push({
+          ...word,
+          vocabulary_id: targetVocabId,
+          order_index: currentOrderIndex++,
+        });
+      }
+
+      // Delete old source words
+      const { error: deleteWordsError } = await supabase
+        .from('shared_words')
+        .delete()
+        .in('vocabulary_id', sourceVocabIds);
+
+      if (deleteWordsError) {
+        console.error('❌ Error deleting source words:', deleteWordsError);
+        return c.json({ error: `Delete words error: ${deleteWordsError.message}` }, 500);
+      }
+
+      // Insert words with updated vocabulary_id and order_index
+      const { error: insertWordsError } = await supabase
+        .from('shared_words')
+        .insert(wordsToUpdate);
+
+      if (insertWordsError) {
+        console.error('❌ Error inserting merged words:', insertWordsError);
+        return c.json({ error: `Insert words error: ${insertWordsError.message}` }, 500);
+      }
+    }
+
+    const totalWords = (targetWords?.length || 0) + (sourceWords?.length || 0);
+    console.log('✅ Total words after merge:', totalWords);
+
+    // 6. Update target vocabulary with new title and total_words count
+    console.log('💾 Updating target vocabulary...');
+    const { error: updateError } = await supabase
+      .from('shared_vocabularies')
+      .update({
+        title: newTitle || targetVocab.title,
+        total_words: totalWords,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', targetVocabId);
+
+    if (updateError) {
+      console.error('❌ Error updating vocabulary:', updateError);
+      return c.json({ error: `Update error: ${updateError.message}` }, 500);
+    }
+
+    console.log('✅ Target vocabulary updated');
+
+    // 7. Delete source vocabularies
+    console.log('🗑️ Deleting source vocabularies...');
+    const { error: deleteError } = await supabase
+      .from('shared_vocabularies')
+      .delete()
+      .in('id', sourceVocabIds);
+
+    if (deleteError) {
+      console.error('❌ Error deleting vocabularies:', deleteError);
+      return c.json({ error: `Delete error: ${deleteError.message}` }, 500);
+    }
+
+    console.log('✅ Vocabularies merged successfully');
+    return c.json({
+      success: true,
+      mergedVocabId: targetVocabId,
+      totalWords
+    });
+  } catch (error: any) {
+    console.error('❌ Error merging vocabularies:', error);
+    console.error('Stack:', error?.stack);
+    return c.json({
+      error: error?.message || String(error),
+      details: error?.stack
+    }, 500);
   }
 });
 
@@ -1289,31 +1495,39 @@ app.get("/admin/stats", async (c) => {
 app.get("/admin/categories", async (c) => {
   try {
     const supabase = getSupabaseClient();
+
+    // Directly extract unique categories from shared_vocabularies
     const { data, error } = await supabase
-      .from('vocabulary_categories')
-      .select('*')
-      .order('sort_order', { ascending: true });
+      .from('shared_vocabularies')
+      .select('category');
 
-    if (error) throw error;
+    if (error) {
+      console.error('❌ Error fetching vocabularies:', error);
+      return c.json({ categories: [] }, 500);
+    }
 
-    const categories = (data || []).map(cat => ({
-      id: cat.id,
-      name: cat.name,
-      icon: cat.icon || '📚',
-      enabled: cat.enabled,
-      order: cat.sort_order || 0
-    }));
+    // Extract unique categories
+    const categoriesSet = new Set<string>();
+    data?.forEach(item => {
+      if (item.category) categoriesSet.add(item.category);
+    });
 
+    // Convert to array and sort alphabetically
+    const categories = Array.from(categoriesSet)
+      .sort()
+      .map(name => ({
+        id: name.toLowerCase().replace(/\s+/g, '_'),
+        name,
+        icon: '📚',
+        enabled: true,
+        order: 0
+      }));
+
+    console.log(`✅ Found ${categories.length} unique categories`);
     return c.json({ categories });
   } catch (error) {
-    // Fallback to old behavior if table doesn't exist yet
-    console.error('Error fetching categories:', error);
-    const supabase = getSupabaseClient();
-    const { data } = await supabase.from('shared_vocabularies').select('category');
-    const categoriesSet = new Set<string>();
-    data?.forEach(item => { if (item.category) categoriesSet.add(item.category); });
-    const categories = Array.from(categoriesSet).map(name => ({ id: name.toLowerCase().replace(/\s+/g, '_'), name, icon: '📚', enabled: true, order: 0 }));
-    return c.json({ categories });
+    console.error('❌ Error in /admin/categories:', error);
+    return c.json({ categories: [] }, 500);
   }
 });
 
@@ -1661,6 +1875,180 @@ app.post("/ai-chat", async (c) => {
     return c.json({ message });
   } catch (error) {
     return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Regenerate examples and translations for existing vocabulary
+app.post("/admin/regenerate-examples", async (c) => {
+  try {
+    const body = await c.req.json();
+    const { vocabularyId } = body;
+
+    if (!vocabularyId) {
+      return c.json({ error: 'vocabularyId is required' }, 400);
+    }
+
+    const supabase = getSupabaseClient();
+    const GEMINI_API_KEY = Deno.env.get('GEMINI_API_KEY');
+    if (!GEMINI_API_KEY) {
+      return c.json({ error: 'GEMINI_API_KEY not configured' }, 500);
+    }
+
+    console.log(`🔄 Regenerating examples for vocabulary ${vocabularyId}`);
+
+    // Get all words from the vocabulary
+    const { data: words, error: fetchError } = await supabase
+      .from('shared_words')
+      .select('id, word, meaning, part_of_speech')
+      .eq('vocabulary_id', vocabularyId)
+      .order('order_index', { ascending: true })
+      .limit(100000);
+
+    if (fetchError) {
+      console.error('❌ Error fetching words:', fetchError);
+      return c.json({ error: `Fetch error: ${fetchError.message}` }, 500);
+    }
+
+    if (!words || words.length === 0) {
+      return c.json({ error: 'No words found in vocabulary' }, 404);
+    }
+
+    console.log(`📝 Processing ${words.length} words`);
+
+    const BATCH_SIZE = 30; // Process 30 words at a time
+    let processedCount = 0;
+    let errorCount = 0;
+
+    // Process in batches
+    for (let i = 0; i < words.length; i += BATCH_SIZE) {
+      const batch = words.slice(i, i + BATCH_SIZE);
+      console.log(`🔄 Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(words.length / BATCH_SIZE)}`);
+
+      const wordList = batch.map((w, idx) =>
+        `${idx + 1}. "${w.word}" (뜻: ${w.meaning}${w.part_of_speech ? ', ' + w.part_of_speech : ''})`
+      ).join('\n');
+
+      const prompt = `You are a professional English vocabulary expert. Generate ONLY example sentences and translations for the following words.
+
+INPUT WORDS:
+${wordList}
+
+TASK:
+For EACH word, generate a JSON object with ONLY these fields:
+1. word: The exact word from the input (unchanged)
+2. example: One natural English sentence using the word (12-20 words)
+3. translation: Korean translation of the example sentence that still includes the English word explicitly (e.g., "그는 항상 resilience(회복력)을 보여준다.")
+
+CRITICAL REQUIREMENTS:
+- Return a JSON array with EXACTLY ${batch.length} objects in the SAME ORDER as the input words
+- Each object must include ALL 3 fields above
+- translation must contain the English word itself
+- Return ONLY valid JSON (no markdown, no extra commentary)
+
+NOW GENERATE THE JSON ARRAY:`;
+
+      try {
+        const response = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${GEMINI_API_KEY}`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              contents: [{ parts: [{ text: prompt }] }],
+              generationConfig: {
+                temperature: 0.4,
+                maxOutputTokens: 8192,
+              },
+            }),
+          }
+        );
+
+        if (!response.ok) {
+          console.error(`❌ Gemini API error for batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+          errorCount += batch.length;
+          continue;
+        }
+
+        const geminiData = await response.json();
+        const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+        if (!generatedText) {
+          console.error(`❌ No content generated for batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+          errorCount += batch.length;
+          continue;
+        }
+
+        // Clean and parse JSON
+        let cleanedText = generatedText.trim();
+        if (cleanedText.startsWith('```json')) {
+          cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+        } else if (cleanedText.startsWith('```')) {
+          cleanedText = cleanedText.replace(/```\n?/g, '').replace(/```\s*$/g, '');
+        }
+        cleanedText = cleanedText.trim();
+
+        let parsed;
+        try {
+          parsed = JSON.parse(cleanedText);
+        } catch (parseError) {
+          console.error(`❌ Failed to parse JSON for batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+          errorCount += batch.length;
+          continue;
+        }
+
+        if (!Array.isArray(parsed)) {
+          console.error(`❌ Response is not an array for batch ${Math.floor(i / BATCH_SIZE) + 1}`);
+          errorCount += batch.length;
+          continue;
+        }
+
+        // Update each word in the database
+        for (let j = 0; j < batch.length && j < parsed.length; j++) {
+          const wordData = batch[j];
+          const aiResult = parsed[j];
+
+          if (!aiResult.example || !aiResult.translation) {
+            console.error(`⚠️ Missing fields for word: ${wordData.word}`);
+            errorCount++;
+            continue;
+          }
+
+          const { error: updateError } = await supabase
+            .from('shared_words')
+            .update({
+              example: aiResult.example,
+              translation: aiResult.translation,
+            })
+            .eq('id', wordData.id);
+
+          if (updateError) {
+            console.error(`❌ Error updating word ${wordData.word}:`, updateError);
+            errorCount++;
+          } else {
+            processedCount++;
+          }
+        }
+
+        console.log(`✅ Batch ${Math.floor(i / BATCH_SIZE) + 1} completed`);
+      } catch (batchError) {
+        console.error(`❌ Batch ${Math.floor(i / BATCH_SIZE) + 1} failed:`, batchError);
+        errorCount += batch.length;
+      }
+    }
+
+    console.log(`✅ Regeneration complete: ${processedCount} success, ${errorCount} errors`);
+    return c.json({
+      success: true,
+      processedCount,
+      errorCount,
+      totalWords: words.length,
+    });
+  } catch (error: any) {
+    console.error('❌ Regeneration error:', error);
+    return c.json({
+      error: error?.message || String(error),
+      details: error?.stack
+    }, 500);
   }
 });
 

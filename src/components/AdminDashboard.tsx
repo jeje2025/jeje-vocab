@@ -18,12 +18,15 @@ import {
   Shield,
   Save,
   Calendar,
-  ChevronDown
+  ChevronDown,
+  RefreshCw
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId } from '../utils/supabase/info';
 import { VocabularyInputAdvanced, VocabularyItem } from './VocabularyInputAdvanced';
 import { useAuth } from '../hooks/useAuth';
+import { CategoryManager } from './admin/CategoryManager';
+import { VocabularyManagement } from './admin/VocabularyManagement';
 
 interface AdminDashboardProps {
   onClose: () => void;
@@ -32,6 +35,7 @@ interface AdminDashboardProps {
 type AdminScreen = 'overview' | 'vocabularies' | 'upload' | 'users' | 'categories';
 
 export function AdminDashboard({ onClose }: AdminDashboardProps) {
+  const { getAuthToken } = useAuth();
   const [currentScreen, setCurrentScreen] = useState<AdminScreen>('overview');
 
   return (
@@ -111,10 +115,10 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
         {/* Main Content */}
         <div className="flex-1 overflow-auto">
           {currentScreen === 'overview' && <OverviewScreen />}
-          {currentScreen === 'vocabularies' && <VocabulariesScreen />}
+          {currentScreen === 'vocabularies' && <VocabularyManagement getAuthToken={getAuthToken} />}
           {currentScreen === 'upload' && <UploadScreen />}
           {currentScreen === 'users' && <UsersScreen />}
-          {currentScreen === 'categories' && <CategoriesScreen />}
+          {currentScreen === 'categories' && <CategoryManager getAuthToken={getAuthToken} />}
         </div>
       </div>
     </div>
@@ -343,6 +347,50 @@ function VocabulariesScreen() {
     }
   };
 
+  const handleRegenerateExamples = async (vocabId: string, vocabTitle: string) => {
+    if (!confirm(`"${vocabTitle}" 단어장의 예문을 재생성하시겠습니까?\n\n이 작업은 시간이 걸릴 수 있으며, AI 비용이 발생합니다.`)) return;
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('인증이 필요합니다.');
+      return;
+    }
+
+    const loadingToast = toast.loading('예문 재생성 중...');
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/admin/regenerate-examples`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+          body: JSON.stringify({ vocabularyId: vocabId }),
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '예문 재생성 실패');
+      }
+
+      toast.success(`예문 재생성 완료!\n성공: ${data.processedCount}개, 실패: ${data.errorCount}개`, {
+        id: loadingToast,
+        duration: 5000,
+      });
+
+      await loadVocabularies();
+    } catch (error: any) {
+      console.error('Error regenerating examples:', error);
+      toast.error(`예문 재생성 실패: ${error.message}`, {
+        id: loadingToast,
+      });
+    }
+  };
+
   return (
     <div className="p-8">
       {/* Header */}
@@ -389,14 +437,15 @@ function VocabulariesScreen() {
             </thead>
             <tbody className="divide-y divide-gray-200">
               {vocabularies.map((vocab) => (
-                <VocabularyRow 
+                <VocabularyRow
                   key={vocab.id}
                   title={vocab.title}
                   category={vocab.category}
                   level={vocab.level}
-                  words={vocab.words?.length || 0}
+                  words={typeof vocab.total_words === 'number' ? vocab.total_words : (vocab.words?.length || 0)}
                   downloads={vocab.downloads || 0}
                   onDelete={() => handleDelete(vocab.id)}
+                  onRegenerateExamples={() => handleRegenerateExamples(vocab.id, vocab.title)}
                 />
               ))}
             </tbody>
@@ -1266,20 +1315,22 @@ function CategoryItem({ label, percentage, color }: { label: string; percentage:
   );
 }
 
-function VocabularyRow({ 
-  title, 
-  category, 
-  level, 
-  words, 
+function VocabularyRow({
+  title,
+  category,
+  level,
+  words,
   downloads,
-  onDelete
-}: { 
-  title: string; 
-  category: string; 
-  level: string; 
-  words: number; 
+  onDelete,
+  onRegenerateExamples
+}: {
+  title: string;
+  category: string;
+  level: string;
+  words: number;
   downloads: number;
   onDelete: () => void;
+  onRegenerateExamples?: () => void;
 }) {
   return (
     <tr className="hover:bg-gray-50 transition-colors">
@@ -1302,6 +1353,16 @@ function VocabularyRow({
       </td>
       <td className="px-6 py-4">
         <div className="flex items-center justify-end gap-2">
+          {onRegenerateExamples && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={onRegenerateExamples}
+              className="p-2 hover:bg-purple-50 rounded-lg transition-colors"
+              title="예문 재생성"
+            >
+              <RefreshCw className="w-4 h-4 text-purple-500" />
+            </motion.button>
+          )}
           <motion.button
             whileTap={{ scale: 0.95 }}
             onClick={onDelete}
