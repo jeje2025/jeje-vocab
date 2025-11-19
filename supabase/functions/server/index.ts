@@ -50,6 +50,13 @@ function generateWordId() {
   return `word_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 }
 
+// Helper: Check if user is admin
+// Anyone who can authenticate is considered admin for now
+async function isAdmin(userId: string): Promise<boolean> {
+  // If user has valid userId, they're authenticated and can use admin tools
+  return !!userId;
+}
+
 // Helper: Extract user ID from Authorization header
 async function getUserIdFromAuth(c: any): Promise<string | null> {
   const authHeader = c.req.header('Authorization');
@@ -57,29 +64,29 @@ async function getUserIdFromAuth(c: any): Promise<string | null> {
     console.log('⚠️ No Authorization header provided');
     return null;
   }
-  
+
   const token = authHeader.replace('Bearer ', '');
-  
+
   // ✅ Log token prefix for debugging
   console.log('🔑 Received token:', token.substring(0, 20) + '...');
   console.log('🔑 Token length:', token.length);
-  
+
   // Check if this is the anon key (not a user token)
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   if (token === anonKey) {
     console.log('⚠️ Anon key provided instead of user token');
     return null;
   }
-  
+
   try {
     // ✅ Use ANON client for JWT verification
     const supabase = getSupabaseAnonClient();
-    
+
     console.log('🔍 Verifying JWT with Supabase Auth...');
-    
+
     // Verify the JWT token and get user
     const { data: { user }, error } = await supabase.auth.getUser(token);
-    
+
     if (error) {
       console.error('❌ Auth verification failed:', error.message);
       console.error('❌ Error code:', error.status);
@@ -87,12 +94,12 @@ async function getUserIdFromAuth(c: any): Promise<string | null> {
       console.error('❌ Full error:', JSON.stringify(error, null, 2));
       return null;
     }
-    
+
     if (!user) {
       console.error('❌ No user found in token (but no error either)');
       return null;
     }
-    
+
     console.log('✅ Auth verified for user:', user.id);
     return user.id;
   } catch (error: any) {
@@ -692,16 +699,26 @@ app.post("/user-vocabulary", async (c) => {
 
     if (wordsError) throw wordsError;
 
+    // Check if words have source_chapter (for chapter-based vocabularies)
+    const hasSourceChapter = sharedWords.length > 0 && sharedWords[0].source_chapter;
+
     // Create user words
     const userWords = sharedWords.map((word: any, index: number) => {
       const payload = normalizeWordPayload(word);
+
+      // For chapter-based vocabularies, use chapter as unit number
+      // For regular vocabularies, use index-based unit calculation
+      const unitNumber = hasSourceChapter
+        ? parseInt(word.source_chapter, 10)
+        : Math.floor(index / 10) + 1;
+
       return {
         id: generateWordId(),
         user_id: userId,
         vocabulary_id: vocabId,
         shared_word_id: word.id,
         ...payload,
-        unit_number: Math.floor(index / 10) + 1,
+        unit_number: unitNumber,
         order_index: index + 1,
         status: 'learning',
         confidence: 0,
@@ -1035,16 +1052,26 @@ app.post("/user-vocabularies/add-shared", async (c) => {
 
     if (createError) throw createError;
 
+    // Check if words have source_chapter (for chapter-based vocabularies)
+    const hasSourceChapter = sharedWords.length > 0 && sharedWords[0].source_chapter;
+
     // Create user words with actual DB schema columns
     const userWords = sharedWords.map((word: any, index: number) => {
       const payload = normalizeWordPayload(word);
+
+      // For chapter-based vocabularies, use chapter as unit number
+      // For regular vocabularies, use index-based unit calculation
+      const unitNumber = hasSourceChapter
+        ? parseInt(word.source_chapter, 10)
+        : Math.floor(index / wordsPerUnit) + 1;
+
       return {
         id: generateWordId(),
         user_id: userId,
         vocabulary_id: vocabId,
         shared_word_id: word.id,
         ...payload,
-        unit_number: Math.floor(index / wordsPerUnit) + 1,
+        unit_number: unitNumber,
         order_index: index + 1,
         status: 'learning',
         confidence: 0,
@@ -2076,6 +2103,346 @@ app.put("/user-progress", async (c) => {
     return c.json({ progress: body });
   } catch (error) {
     return c.json({ error: String(error) }, 500);
+  }
+});
+
+// ============================================
+// 301 CHAPTER MIGRATION ENDPOINT
+// ============================================
+
+app.post("/admin/migrate-chapters", async (c) => {
+  try {
+    const userId = await getUserIdFromAuth(c);
+    if (!userId) return c.json({ error: 'Unauthorized' }, 401);
+
+    const isUserAdmin = await isAdmin(userId);
+    if (!isUserAdmin) return c.json({ error: 'Forbidden' }, 403);
+
+    const supabase = getSupabaseClient();
+
+    console.log('🔄 Starting chapter migration...');
+
+    // Step 1: Check if column exists
+    try {
+      await supabase
+        .from('shared_words')
+        .select('source_chapter')
+        .limit(1);
+      console.log('✅ source_chapter column exists');
+    } catch (error: any) {
+      console.log('⚠️ source_chapter column might not exist. Error:', error.message);
+      return c.json({
+        error: 'source_chapter column does not exist. Please add it manually via Supabase Dashboard SQL Editor:\nALTER TABLE shared_words ADD COLUMN source_chapter TEXT;',
+        hint: 'Run this SQL in the Supabase Dashboard SQL Editor, then try again.'
+      }, 400);
+    }
+
+    // Step 2: Get all vocabularies (301 + 어휘끝 블랙)
+    console.log('🔍 Finding vocabularies...');
+    const { data: vocabs, error: vocabError } = await supabase
+      .from('shared_vocabularies')
+      .select('id, title, category')
+      .or('category.eq.301,title.ilike.%301 chapter%,title.ilike.%어휘끝 블랙%');
+
+    if (vocabError) {
+      console.error('❌ Error fetching vocabularies:', vocabError);
+      return c.json({ error: vocabError.message }, 500);
+    }
+
+    if (!vocabs || vocabs.length === 0) {
+      return c.json({ error: 'No vocabularies found' }, 404);
+    }
+
+    console.log(`📚 Found ${vocabs.length} vocabularies to process`);
+
+    let processedVocabs = 0;
+    let processedWords = 0;
+    const chapterRegex301 = /chapter\s+(\d+)/i;
+    const chapterRegexVoca = /(\d+)강/;
+
+    // Step 3 & 4: Process each vocabulary
+    for (const vocab of vocabs) {
+      let chapterNumber: string | null = null;
+      let newCategory: string | null = null;
+
+      // Check if it's 301 series
+      const match301 = vocab.title.match(chapterRegex301);
+      if (match301) {
+        chapterNumber = match301[1];
+        newCategory = '정병권T';
+        console.log(`📖 Processing 301: "${vocab.title}" - Chapter ${chapterNumber}`);
+      }
+
+      // Check if it's 어휘끝 블랙 series
+      const matchVoca = vocab.title.match(chapterRegexVoca);
+      if (matchVoca && vocab.title.includes('어휘끝 블랙')) {
+        chapterNumber = matchVoca[1];
+        newCategory = '어휘끝 블랙';
+        console.log(`📖 Processing 어휘끝 블랙: "${vocab.title}" - 강 ${chapterNumber}`);
+      }
+
+      if (!chapterNumber) {
+        console.log(`⚠️ Skipping "${vocab.title}" - no chapter/강 number found`);
+        continue;
+      }
+
+      // Update all words in this vocabulary with source_chapter
+      const { error: updateWordsError } = await supabase
+        .from('shared_words')
+        .update({ source_chapter: chapterNumber })
+        .eq('vocabulary_id', vocab.id);
+
+      if (updateWordsError) {
+        console.error(`❌ Error updating words for ${vocab.title}:`, updateWordsError);
+        continue;
+      }
+
+      // Update vocabulary category if needed
+      if (newCategory && vocab.category !== newCategory) {
+        const { error: catError } = await supabase
+          .from('shared_vocabularies')
+          .update({ category: newCategory })
+          .eq('id', vocab.id);
+
+        if (catError) {
+          console.error(`❌ Error updating category for ${vocab.title}:`, catError);
+        }
+      }
+
+      // Count updated words
+      const { count } = await supabase
+        .from('shared_words')
+        .select('*', { count: 'exact', head: true })
+        .eq('vocabulary_id', vocab.id);
+
+      processedWords += (count || 0);
+      processedVocabs++;
+    }
+
+    console.log('✅ Migration complete!');
+    return c.json({
+      success: true,
+      processedVocabs,
+      processedWords,
+      message: `Successfully migrated ${processedVocabs} vocabularies with ${processedWords} total words`
+    });
+  } catch (error: any) {
+    console.error('❌ Migration error:', error);
+    return c.json({
+      error: error?.message || String(error),
+      details: error?.stack
+    }, 500);
+  }
+});
+
+// Auto-merge chapter-based vocabularies
+app.post("/admin/auto-merge-chapters", async (c) => {
+  try {
+    const userId = await getUserIdFromAuth(c);
+    if (!userId) return unauthorizedResponse(c);
+
+    const isUserAdmin = await isAdmin(userId);
+    if (!isUserAdmin) {
+      return c.json({ error: 'Forbidden - Admin access required' }, 403);
+    }
+
+    const supabase = getSupabaseClient();
+
+    console.log('🔄 Starting auto-merge for chapter-based vocabularies...');
+
+    // 1. Merge all "정병권T" (301) vocabularies
+    const { data: jeongVocabs, error: jeongError } = await supabase
+      .from('shared_vocabularies')
+      .select('id, title, category, total_words')
+      .eq('category', '정병권T')
+      .order('title');
+
+    if (jeongError) throw jeongError;
+
+    let merged301 = false;
+    if (jeongVocabs && jeongVocabs.length > 1) {
+      console.log(`📚 Found ${jeongVocabs.length} 정병권T vocabularies to merge`);
+
+      // Create or find the target vocabulary
+      const { data: existingTarget301 } = await supabase
+        .from('shared_vocabularies')
+        .select('id')
+        .eq('title', '정병권 301')
+        .eq('category', '정병권T')
+        .single();
+
+      let targetVocabId301;
+      if (existingTarget301) {
+        targetVocabId301 = existingTarget301.id;
+      } else {
+        // Create new target vocabulary
+        const { data: newTarget301, error: createError301 } = await supabase
+          .from('shared_vocabularies')
+          .insert({
+            title: '정병권 301',
+            category: '정병권T',
+            level: 'Intermediate',
+            total_words: 0,
+          })
+          .select()
+          .single();
+
+        if (createError301) throw createError301;
+        targetVocabId301 = newTarget301.id;
+      }
+
+      // Merge all source vocabularies into target
+      for (const vocab of jeongVocabs) {
+        if (vocab.id === targetVocabId301) continue; // Skip target itself
+
+        console.log(`🔄 Merging "${vocab.title}" into "정병권 301"`);
+
+        // Get all words from source vocabulary
+        const { data: words, error: wordsError } = await supabase
+          .from('shared_words')
+          .select('*')
+          .eq('vocabulary_id', vocab.id)
+          .order('order_index');
+
+        if (wordsError) throw wordsError;
+
+        // Move words to target vocabulary
+        if (words && words.length > 0) {
+          const { error: updateError } = await supabase
+            .from('shared_words')
+            .update({ vocabulary_id: targetVocabId301 })
+            .eq('vocabulary_id', vocab.id);
+
+          if (updateError) throw updateError;
+        }
+
+        // Delete source vocabulary
+        const { error: deleteError } = await supabase
+          .from('shared_vocabularies')
+          .delete()
+          .eq('id', vocab.id);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // Update total_words count for target
+      const { count: totalWords301 } = await supabase
+        .from('shared_words')
+        .select('*', { count: 'exact', head: true })
+        .eq('vocabulary_id', targetVocabId301);
+
+      await supabase
+        .from('shared_vocabularies')
+        .update({ total_words: totalWords301 || 0 })
+        .eq('id', targetVocabId301);
+
+      merged301 = true;
+      console.log(`✅ Merged ${jeongVocabs.length} 정병권T vocabularies into "정병권 301"`);
+    }
+
+    // 2. Merge all "어휘끝 블랙" vocabularies
+    const { data: vocaVocabs, error: vocaError } = await supabase
+      .from('shared_vocabularies')
+      .select('id, title, category, total_words')
+      .eq('category', '어휘끝 블랙')
+      .order('title');
+
+    if (vocaError) throw vocaError;
+
+    let mergedVoca = false;
+    if (vocaVocabs && vocaVocabs.length > 1) {
+      console.log(`📚 Found ${vocaVocabs.length} 어휘끝 블랙 vocabularies to merge`);
+
+      // Create or find the target vocabulary
+      const { data: existingTargetVoca } = await supabase
+        .from('shared_vocabularies')
+        .select('id')
+        .eq('title', '어휘끝 블랙')
+        .eq('category', '어휘끝 블랙')
+        .single();
+
+      let targetVocabIdVoca;
+      if (existingTargetVoca) {
+        targetVocabIdVoca = existingTargetVoca.id;
+      } else {
+        // Create new target vocabulary
+        const { data: newTargetVoca, error: createErrorVoca } = await supabase
+          .from('shared_vocabularies')
+          .insert({
+            title: '어휘끝 블랙',
+            category: '어휘끝 블랙',
+            level: 'Advanced',
+            total_words: 0,
+          })
+          .select()
+          .single();
+
+        if (createErrorVoca) throw createErrorVoca;
+        targetVocabIdVoca = newTargetVoca.id;
+      }
+
+      // Merge all source vocabularies into target
+      for (const vocab of vocaVocabs) {
+        if (vocab.id === targetVocabIdVoca) continue; // Skip target itself
+
+        console.log(`🔄 Merging "${vocab.title}" into "어휘끝 블랙"`);
+
+        // Get all words from source vocabulary
+        const { data: words, error: wordsError } = await supabase
+          .from('shared_words')
+          .select('*')
+          .eq('vocabulary_id', vocab.id)
+          .order('order_index');
+
+        if (wordsError) throw wordsError;
+
+        // Move words to target vocabulary
+        if (words && words.length > 0) {
+          const { error: updateError } = await supabase
+            .from('shared_words')
+            .update({ vocabulary_id: targetVocabIdVoca })
+            .eq('vocabulary_id', vocab.id);
+
+          if (updateError) throw updateError;
+        }
+
+        // Delete source vocabulary
+        const { error: deleteError } = await supabase
+          .from('shared_vocabularies')
+          .delete()
+          .eq('id', vocab.id);
+
+        if (deleteError) throw deleteError;
+      }
+
+      // Update total_words count for target
+      const { count: totalWordsVoca } = await supabase
+        .from('shared_words')
+        .select('*', { count: 'exact', head: true })
+        .eq('vocabulary_id', targetVocabIdVoca);
+
+      await supabase
+        .from('shared_vocabularies')
+        .update({ total_words: totalWordsVoca || 0 })
+        .eq('id', targetVocabIdVoca);
+
+      mergedVoca = true;
+      console.log(`✅ Merged ${vocaVocabs.length} 어휘끝 블랙 vocabularies into "어휘끝 블랙"`);
+    }
+
+    return c.json({
+      success: true,
+      merged301,
+      merged어휘끝블랙: mergedVoca,
+      message: `Auto-merge complete. 정병권T: ${merged301 ? 'merged' : 'skipped'}, 어휘끝 블랙: ${mergedVoca ? 'merged' : 'skipped'}`,
+    });
+
+  } catch (error: any) {
+    console.error('❌ Auto-merge error:', error);
+    return c.json({
+      error: error?.message || String(error),
+      details: error?.stack
+    }, 500);
   }
 });
 

@@ -21,6 +21,7 @@ interface HeaderProps {
   } | null;
   onDdayClick?: () => void;
   onLogout?: () => void;
+  userName?: string;
 }
 
 export function Header(props: HeaderProps) {
@@ -162,7 +163,7 @@ export function Header(props: HeaderProps) {
                   color: '#491B6D'
                 }}
               >
-                장지혜님
+                {props.userName || '사용자'}님
               </span>
               <motion.span
                 animate={{

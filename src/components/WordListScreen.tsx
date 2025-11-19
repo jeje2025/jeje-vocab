@@ -52,6 +52,7 @@ interface WordListScreenProps {
   wrongAnswersWordIds?: string[]; // 오답 단어 ID 목록
   hideHeader?: boolean; // 헤더 숨기기
   hideActionButtons?: boolean; // 액션 버튼 숨기기
+  unitNumber?: number; // 유닛 번호
 }
 
 interface WordData {
@@ -75,7 +76,7 @@ interface WordData {
   graveyardAt?: string; // 무덤 이동 시간
 }
 
-function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitName, vocabularyWords, onAddToStarred, onMoveToGraveyard, onDeletePermanently, onStartFlashcards, filterType, starredWordIds = [], graveyardWordIds = [], wrongAnswersWordIds = [], hideHeader = false, hideActionButtons = false }: WordListScreenProps) {
+function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitName, vocabularyWords, onAddToStarred, onMoveToGraveyard, onDeletePermanently, onStartFlashcards, filterType, starredWordIds = [], graveyardWordIds = [], wrongAnswersWordIds = [], hideHeader = false, hideActionButtons = false, unitNumber }: WordListScreenProps) {
   const [showMemoryGame, setShowMemoryGame] = useState(false);
   const [showGhostGame, setShowGhostGame] = useState(false);
   const {
@@ -111,10 +112,14 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
     };
   }, []);
 
-  // Convert vocabularyWords to WordData format
-  const convertToWordData = useCallback((rawWords: any[]): WordData[] => {
-    logWordList('🔄 Converting words:', rawWords.length);
-    return rawWords.map((word, index) => ({
+  // Use vocabularyWords if provided, otherwise empty array
+  const baseWords = useMemo(() => {
+    if (!vocabularyWords || vocabularyWords.length === 0) {
+      return [];
+    }
+
+    logWordList('🔄 Converting words:', vocabularyWords.length);
+    return vocabularyWords.map((word, index) => ({
       id: word.id || `word-${index}`,
       word: word.word || '',
       pronunciation: word.pronunciation || '',
@@ -123,7 +128,7 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
       example: word.example_sentence || word.englishExample || word.example || '', // 서버 필드명 example_sentence 우선
       translation: word.translation || '', // 한글 번역
       story: word.etymology || word.story || '', // etymology 필드를 story로 매핑
-      derivatives: Array.isArray(word.derivatives) 
+      derivatives: Array.isArray(word.derivatives)
         ? word.derivatives.map((d: any) => ({ word: d.word || d, meaning: d.meaning || '' }))
         : typeof word.derivatives === 'string' && word.derivatives
         ? word.derivatives.split(',').map(d => {
@@ -154,15 +159,7 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
       originalIndex: index + 1,
       graveyardAt: word.updated_at || word.updatedAt || undefined
     }));
-  }, []);
-
-  // Use vocabularyWords if provided, otherwise empty array
-  const baseWords = useMemo(() => {
-    if (vocabularyWords && vocabularyWords.length > 0) {
-      return convertToWordData(vocabularyWords);
-    }
-    return [];
-  }, [vocabularyWords, convertToWordData]);
+  }, [vocabularyWords]);
 
   // 필터링된 단어 목록 생성
   const getFilteredWords = useCallback(() => {
@@ -447,14 +444,14 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
           handleRelatedWordToggle(basketWord);
         }}
         aria-pressed={selected}
-        className={`rounded-xl border px-1.5 py-0.5 transition-all text-left ${
+        className={`rounded-lg border px-2 py-1 transition-all text-left ${
           selected
             ? 'bg-[#F8F5FF] border-[#DCCEF8] text-[#5B21B6] shadow-sm'
             : 'bg-white/80 border-gray-200/80 text-gray-700 hover:border-[#D8B4FE]'
         }`}
       >
-        <div className="min-w-0">
-          <p className="text-[11px] font-semibold leading-tight truncate">{entry.word}</p>
+        <div className="min-w-0 flex items-center gap-1">
+          <p className="text-[11px] font-semibold leading-tight">{entry.word}</p>
           {entry.meaning && (
             <p className="text-[10px] text-gray-500 leading-tight truncate">{entry.meaning}</p>
           )}
@@ -883,7 +880,7 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
       )}
 
       {/* Word Cards */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-24" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-48" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <div className="space-y-3 pt-4">
           <AnimatePresence mode="popLayout">
             {words.map((word, index) => (
@@ -1172,7 +1169,7 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                             transition={{ duration: 0.3, ease: 'easeInOut' }}
                             className="overflow-hidden"
                           >
-                            <div className="px-4 pb-4 space-y-3 pt-2">
+                            <div className="px-4 pb-4 space-y-2 pt-1">
                               {/* Story - 어원 이야기 */}
                               {word.story && (
                                 <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] p-[10px]">

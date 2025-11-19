@@ -718,7 +718,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                         </button>
 
                         <div className="flex-1 bg-[#F3F4F6]/60 border border-[#E5E7EB]/40 rounded-lg px-3 py-2">
-                          <p className="text-[#4B5563]" style={{ fontSize: '13px', fontWeight: 500, lineHeight: 1.5 }}>
+                          <p className="text-[#4B5563]" style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.5 }}>
                             {exampleLanguage === 'en'
                               ? highlightWord(currentCard.example, currentCard.word)
                               : highlightWord(currentCard.translation || currentCard.example, currentCard.word)
@@ -731,11 +731,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                     {/* Etymology - WordListScreen 스타일 */}
                     {currentCard.etymology && (
                       <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] p-[10px]">
-                        <div className="flex items-start gap-2 mb-1.5">
-                          <div className="w-1 h-1 rounded-full bg-[#8B5CF6] mt-2" />
-                          <span className="text-[#6B7280]" style={{ fontSize: '11px', fontWeight: 700 }}>어원 이야기</span>
-                        </div>
-                        <p className="text-[#4B5563] pl-3" style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.6 }}>
+                        <p className="text-[#4B5563]" style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.6 }}>
                           {currentCard.etymology}
                         </p>
                       </div>
@@ -746,11 +742,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                       {/* Derivatives */}
                       {currentCard.derivatives && currentCard.derivatives.length > 0 && (
                         <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
-                          <div className="flex items-center gap-1.5 mb-1.5">
-                            <div className="w-1 h-1 rounded-full bg-[#8B5CF6]" />
-                            <span className="text-[#6B7280]" style={{ fontSize: '11px', fontWeight: 700 }}>파생어</span>
-                          </div>
-                          <div className="flex flex-wrap gap-x-2 gap-y-1 pl-2">
+                          <div className="flex flex-wrap gap-x-2 gap-y-1">
                             {currentCard.derivatives.map((der, idx) => (
                               <span key={idx} className="inline-flex items-baseline gap-1">
                                 <span className="text-[11px] font-semibold text-gray-700">{der.word}</span>
@@ -769,11 +761,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           {/* Synonyms */}
                           {currentCard.synonyms && currentCard.synonyms.length > 0 && (
                             <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
-                              <div className="flex items-center gap-1.5 mb-1.5">
-                                <div className="w-1 h-1 rounded-full bg-[#8B5CF6]" />
-                                <span className="text-[#6B7280]" style={{ fontSize: '11px', fontWeight: 700 }}>유의어</span>
-                              </div>
-                              <div className="flex flex-wrap gap-x-2 gap-y-1 pl-2">
+                              <div className="flex flex-wrap gap-x-2 gap-y-1">
                                 {currentCard.synonyms.map((syn, idx) => (
                                   <span key={idx} className="inline-flex items-baseline gap-1">
                                     <span className="text-[11px] font-semibold text-gray-700">{syn.word}</span>
@@ -789,11 +777,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           {/* Antonyms */}
                           {currentCard.antonyms && currentCard.antonyms.length > 0 && (
                             <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
-                              <div className="flex items-center gap-1.5 mb-1.5">
-                                <div className="w-1 h-1 rounded-full bg-[#8B5CF6]" />
-                                <span className="text-[#6B7280]" style={{ fontSize: '11px', fontWeight: 700 }}>반의어</span>
-                              </div>
-                              <div className="flex flex-wrap gap-x-2 gap-y-1 pl-2">
+                              <div className="flex flex-wrap gap-x-2 gap-y-1">
                                 {currentCard.antonyms.map((ant, idx) => (
                                   <span key={idx} className="inline-flex items-baseline gap-1">
                                     <span className="text-[11px] font-semibold text-gray-700">{ant.word}</span>

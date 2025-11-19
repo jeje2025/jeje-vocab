@@ -126,7 +126,7 @@ export default function App() {
   // ============================================
   const [selectedSubject, setSelectedSubject] = useState<Subject | null>(null);
   const [selectedLesson, setSelectedLesson] = useState<string | null>(null);
-  const [selectedVocabulary, setSelectedVocabulary] = useState<{ id: string; title: string } | null>(null);
+  const [selectedVocabulary, setSelectedVocabulary] = useState<{ id: string; title: string; unitNumber?: number } | null>(null);
   const [isLoadingVocabulary, setIsLoadingVocabulary] = useState(false);
   const [vocabularyWords, setVocabularyWords] = useState<any[]>([]); // 단어 데이터 저장
   const [selectedSharedVocabulary, setSelectedSharedVocabulary] = useState<any>(null);
@@ -167,15 +167,21 @@ export default function App() {
   const vocabularyCacheRef = useRef<Record<string, any[]>>({});
   const prefetchPromisesRef = useRef<Record<string, Promise<void> | null>>({});
 
-  const fetchVocabulary = async (vocabId: string) => {
+  const fetchVocabulary = async (vocabId: string, unitNumber?: number) => {
     const token = auth.getAuthToken();
     if (!token) throw new Error('인증 토큰이 없습니다.');
 
     const isSpecial =
       vocabId === 'starred' || vocabId === 'graveyard' || vocabId === 'wrong-answers';
-    const endpoint = isSpecial
+
+    let endpoint = isSpecial
       ? `https://${projectId}.supabase.co/functions/v1/server/${vocabId}`
       : `https://${projectId}.supabase.co/functions/v1/server/user-vocabularies/${vocabId}`;
+
+    // Add unit number query parameter if specified
+    if (unitNumber && !isSpecial) {
+      endpoint += `?unit=${unitNumber}`;
+    }
 
     const response = await fetch(endpoint, {
       headers: {
@@ -209,15 +215,16 @@ export default function App() {
     }
   }, [navigate, navigateToScreen]);
 
-  const selectVocabulary = (id: string, title: string) => {
-    const cachedWords = vocabularyCacheRef.current[id];
+  const selectVocabulary = (id: string, title: string, unitNumber?: number) => {
+    const cacheKey = unitNumber ? `${id}-unit-${unitNumber}` : id;
+    const cachedWords = vocabularyCacheRef.current[cacheKey];
     if (cachedWords) {
       setVocabularyWords(cachedWords);
       setIsLoadingVocabulary(false);
     } else {
       setIsLoadingVocabulary(true);
     }
-    setSelectedVocabulary({ id, title });
+    setSelectedVocabulary({ id, title, unitNumber });
   };
 
   const handleSubjectClick = (subject: Subject) => {
@@ -432,7 +439,9 @@ export default function App() {
         return;
       }
 
-      const cacheKey = selectedVocabulary.id;
+      const cacheKey = selectedVocabulary.unitNumber
+        ? `${selectedVocabulary.id}-unit-${selectedVocabulary.unitNumber}`
+        : selectedVocabulary.id;
       const cachedWords = vocabularyCacheRef.current[cacheKey];
       if (cachedWords) {
         setVocabularyWords(cachedWords);
@@ -442,8 +451,11 @@ export default function App() {
       }
 
       try {
-        console.log(`🔄 Loading words for vocabulary: ${selectedVocabulary.id}`);
-        const words = await fetchVocabulary(selectedVocabulary.id);
+        const logMessage = selectedVocabulary.unitNumber
+          ? `🔄 Loading words for vocabulary: ${selectedVocabulary.id} (Unit ${selectedVocabulary.unitNumber})`
+          : `🔄 Loading words for vocabulary: ${selectedVocabulary.id}`;
+        console.log(logMessage);
+        const words = await fetchVocabulary(selectedVocabulary.id, selectedVocabulary.unitNumber);
         console.log(`✅ Loaded ${words.length} words for vocabulary`);
         vocabularyCacheRef.current[cacheKey] = words;
         setVocabularyWords(words);
@@ -455,10 +467,15 @@ export default function App() {
       }
     };
     loadVocabularyWords();
-  }, [selectedVocabulary?.id]); // Only depend on the ID string, not the whole object
+  }, [selectedVocabulary?.id, selectedVocabulary?.unitNumber]); // Depend on ID and unitNumber
 
   const schedulePrefetch = useCallback(
     (cacheKey: string) => {
+      // ✅ Don't prefetch if still initializing or not authenticated
+      if (auth.isInitializing || !auth.isAuthenticated) {
+        return;
+      }
+
       delete vocabularyCacheRef.current[cacheKey];
 
       if (prefetchPromisesRef.current[cacheKey]) {
@@ -487,7 +504,7 @@ export default function App() {
         }, 200);
       });
     },
-    [selectedVocabulary?.id]
+    [selectedVocabulary?.id, auth.isAuthenticated, auth.isInitializing]
   );
 
   // Invalidate caches when starred/graveyard/wrong-answers lists change
@@ -556,8 +573,8 @@ export default function App() {
       case 'home':
         return (
           <div className="space-y-6">
-            <Header 
-              profileImage={profileImage} 
+            <Header
+              profileImage={profileImage}
               userXP={userXP}
               recentXPGain={recentXPGain}
               showXPAnimation={showXPAnimation}
@@ -567,6 +584,7 @@ export default function App() {
               ddayInfo={selectedDday}
               onDdayClick={() => setShowDdayModal(true)}
               onLogout={handleLogout}
+              userName={auth.currentUser?.user_metadata?.name || auth.currentUser?.email?.split('@')[0]}
             />
             <SubjectsSection 
               onSubjectClick={handleSubjectClick} 
@@ -603,6 +621,7 @@ export default function App() {
           userXP={userXP}
           selectedSubject={selectedSubject}
           vocabularyTitle={selectedVocabulary?.title}
+          vocabularyWords={vocabularyWords}
           onQuizCompletion={handleQuizCompletion}
           onWrongAnswer={wordLists.addWrongAnswer}
           starredWordIds={wordLists.starredWords}
@@ -637,8 +656,8 @@ export default function App() {
           key={Date.now()} // Force remount when navigating to this screen
           onBack={navigateBack}
           onBackToHome={handleBackToHome}
-          onSelectVocabulary={(id, title) => {
-            selectVocabulary(id, title);
+          onSelectVocabulary={(id, title, unitNumber) => {
+            selectVocabulary(id, title, unitNumber);
             setSelectedSubject({
               id: id,
               name: title,
@@ -649,8 +668,8 @@ export default function App() {
             });
             navigateToScreen('game-map-quiz');
           }}
-          onStartFlashcards={(id, title) => {
-            selectVocabulary(id, title);
+          onStartFlashcards={(id, title, unitNumber) => {
+            selectVocabulary(id, title, unitNumber);
             setSelectedSubject({
               id: id,
               name: title,
@@ -748,7 +767,7 @@ export default function App() {
             onBack={navigateBack}
             onBackToHome={handleBackToHome}
             vocabularyTitle={selectedSubject.name}
-            unitName={'Unit 1'}
+            unitName={selectedVocabulary?.unitNumber ? `Unit ${selectedVocabulary.unitNumber}` : 'Unit 1'}
             vocabularyWords={vocabularyWords}
             filterType={'all'}
             starredWordIds={wordLists.starredWords}

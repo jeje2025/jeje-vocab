@@ -148,6 +148,94 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
     }
   };
 
+  const handleMigrateChapters = async () => {
+    if (!confirm('단어장들을 챕터/강별로 마이그레이션하시겠습니까?\n\n처리 대상:\n- 301 chapter X → 정병권T 카테고리\n- 어휘끝 블랙 X강 → 어휘끝 블랙 카테고리\n\n다운로드 시 챕터/강별 유닛 구분')) return;
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('인증이 필요합니다.');
+      return;
+    }
+
+    const loadingToast = toast.loading('챕터 마이그레이션 중...');
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/admin/migrate-chapters`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '마이그레이션 실패');
+      }
+
+      toast.success(`마이그레이션 완료!\n${data.processedVocabs}개 단어장, ${data.processedWords}개 단어 처리`, {
+        id: loadingToast,
+        duration: 5000,
+      });
+
+      await loadCategories();
+      await loadVocabularies();
+    } catch (error: any) {
+      console.error('Error migrating chapters:', error);
+      toast.error(`마이그레이션 실패: ${error.message}`, {
+        id: loadingToast,
+      });
+    }
+  };
+
+  const handleAutoMerge = async () => {
+    if (!confirm('챕터별 단어장들을 자동으로 합치시겠습니까?\n\n처리 내용:\n- 정병권T 단어장들 → "정병권 301" 하나로 통합\n- 어휘끝 블랙 단어장들 → "어휘끝 블랙" 하나로 통합\n\n각 챕터/강은 유닛으로 유지됩니다.')) return;
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('인증이 필요합니다.');
+      return;
+    }
+
+    const loadingToast = toast.loading('단어장 자동 통합 중...');
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/admin/auto-merge-chapters`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || '자동 통합 실패');
+      }
+
+      toast.success(`자동 통합 완료!\n${data.message}`, {
+        id: loadingToast,
+        duration: 5000,
+      });
+
+      await loadCategories();
+      await loadVocabularies();
+    } catch (error: any) {
+      console.error('Error auto-merging:', error);
+      toast.error(`자동 통합 실패: ${error.message}`, {
+        id: loadingToast,
+      });
+    }
+  };
+
   const handleStartEdit = (vocabId: string, currentCategory: string) => {
     setEditingVocabId(vocabId);
     setEditingCategory(currentCategory);
@@ -204,8 +292,22 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
           <p className="text-gray-600">Manage all shared vocabulary lists</p>
         </div>
 
-        {/* Category Filter */}
+        {/* Actions and Filter */}
         <div className="flex items-center gap-4">
+          <button
+            onClick={handleMigrateChapters}
+            className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors text-sm"
+            style={{ fontWeight: 600 }}
+          >
+            챕터 마이그레이션
+          </button>
+          <button
+            onClick={handleAutoMerge}
+            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
+            style={{ fontWeight: 600 }}
+          >
+            자동 통합
+          </button>
           <label className="text-sm text-gray-600" style={{ fontWeight: 600 }}>
             필터:
           </label>

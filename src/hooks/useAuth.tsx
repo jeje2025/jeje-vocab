@@ -128,8 +128,42 @@ export function useAuth() {
     listeners.add(listener);
     initializeAuthState();
 
+    // Listen to Supabase auth state changes
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        logAuth(`🔄 Auth state changed: ${event}`);
+
+        if (event === 'SIGNED_IN' && session) {
+          logAuth('✅ User signed in via auth listener');
+          persistToken(session.access_token);
+          updateAuthState({
+            isAuthenticated: true,
+            currentUser: session.user,
+            token: session.access_token,
+            isInitializing: false,
+          });
+        } else if (event === 'SIGNED_OUT') {
+          logAuth('🚪 User signed out via auth listener');
+          persistToken(null);
+          updateAuthState({
+            isAuthenticated: false,
+            currentUser: null,
+            token: null,
+            isInitializing: false,
+          });
+        } else if (event === 'TOKEN_REFRESHED' && session) {
+          logAuth('🔄 Token refreshed via auth listener');
+          persistToken(session.access_token);
+          updateAuthState({
+            token: session.access_token,
+          });
+        }
+      }
+    );
+
     return () => {
       listeners.delete(listener);
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -160,6 +194,7 @@ export function useAuth() {
   }, []);
 
   const getAuthToken = useCallback(() => {
+    // Return current token from state
     if (state.token) {
       return state.token;
     }
@@ -168,6 +203,7 @@ export function useAuth() {
       return null;
     }
 
+    // Try to get token from localStorage as fallback
     const token = localStorage.getItem('supabase_access_token');
 
     if (!token) {
@@ -178,11 +214,20 @@ export function useAuth() {
       return null;
     }
 
+    // Don't auto-restore from localStorage if state says not authenticated
+    // This prevents using stale tokens
+    if (!state.isAuthenticated) {
+      if (!hasWarnedNoToken) {
+        logAuth('⚠️ Token in localStorage but not authenticated');
+        hasWarnedNoToken = true;
+      }
+      return null;
+    }
+
     logTokenOnce(token, '🔑 Auth token restored');
     hasWarnedNoToken = false;
-    updateAuthState({ isAuthenticated: true, token });
     return token;
-  }, [state.token]);
+  }, [state.token, state.isAuthenticated]);
 
   return {
     isAuthenticated: state.isAuthenticated,

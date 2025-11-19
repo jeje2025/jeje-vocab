@@ -77,7 +77,7 @@ export function MatchQuizLayout({
       <div className="max-w-4xl mx-auto w-full px-4 pb-6">
         {isCardMatch ? (
           <MeaningMatchGame
-            words={words.slice(0, 5)}
+            words={words}
             mode={mode}
             onComplete={onComplete}
             onWrongAnswer={onWrongAnswer}

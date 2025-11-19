@@ -241,7 +241,7 @@ export function NormalQuizLayout({
                   <h3 className={`font-semibold text-sm mb-1 ${
                     lastAnswerCorrect ? 'text-emerald-700' : 'text-red-700'
                   }`}>
-                    {lastAnswerCorrect ? 'Excellent! +10 XP' : 'Not quite right'}
+                    {lastAnswerCorrect ? '정답이에요!' : '다시 한번 생각해봐요'}
                   </h3>
                   <p className="text-sm text-gray-600 leading-relaxed">{question.explanation}</p>
                 </div>

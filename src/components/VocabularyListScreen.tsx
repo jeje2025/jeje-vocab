@@ -19,8 +19,8 @@ import { Popover, PopoverContent, PopoverTrigger } from './ui/popover';
 interface VocabularyListScreenProps {
   onBack: () => void;
   onBackToHome?: () => void;
-  onSelectVocabulary: (vocabularyId: string, vocabularyTitle: string) => void;
-  onStartFlashcards?: (vocabularyId: string, vocabularyTitle: string) => void;
+  onSelectVocabulary: (vocabularyId: string, vocabularyTitle: string, unitNumber?: number) => void;
+  onStartFlashcards?: (vocabularyId: string, vocabularyTitle: string, unitNumber?: number) => void;
   getAuthToken?: () => string;
 }
 
@@ -662,7 +662,7 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: itemIndex * 0.05 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => onSelectVocabulary(sharedUnit.vocabularyId, unitItem.title)}
+                            onClick={() => onSelectVocabulary(sharedUnit.vocabularyId, unitItem.title, itemIndex + 1)}
                             className="bg-white/90 backdrop-blur-sm rounded-xl p-3 flex items-center gap-2.5"
                           >
                             <div className="w-7 h-7 bg-gradient-to-br from-[#A78BFA] to-[#7C3AED] rounded-lg flex items-center justify-center flex-shrink-0">
@@ -685,7 +685,7 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (onStartFlashcards) {
-                                    onStartFlashcards(sharedUnit.vocabularyId, unitItem.title);
+                                    onStartFlashcards(sharedUnit.vocabularyId, unitItem.title, itemIndex + 1);
                                   }
                                 }}
                                 className="p-1.5 hover:bg-purple-100 rounded-lg transition-colors"

@@ -42,6 +42,7 @@ interface GameMapQuizScreenProps {
     color: string;
   };
   vocabularyTitle?: string;
+  vocabularyWords?: any[]; // Pre-loaded words from parent
   onQuizCompletion: (data: {
     xpGained: number;
     completionTime: string;
@@ -1223,6 +1224,7 @@ export function GameMapQuizScreen({
   userXP: _userXP,
   selectedSubject,
   vocabularyTitle,
+  vocabularyWords: propsVocabularyWords,
   onQuizCompletion,
   onWrongAnswer,
   onAddToStarred,
@@ -1247,13 +1249,11 @@ export function GameMapQuizScreen({
   const [stageScore, setStageScore] = useState(0);
   const [showStageComplete, setShowStageComplete] = useState(false);
   const [showVictory, setShowVictory] = useState(false);
-  const [sessionXP, setSessionXP] = useState(0);
-  const [showConfetti, setShowConfetti] = useState(false);
   const [startTime, setStartTime] = useState<Date | null>(null);
   const [correctAnswersCount, setCorrectAnswersCount] = useState(0);
   const [showQuizModeSelector, setShowQuizModeSelector] = useState(false);
   const [selectedQuizMode, setSelectedQuizMode] = useState<'normal' | 'match' | 'game'>('normal');
-  const [matchGameType, setMatchGameType] = useState<'card-match-word' | 'card-match-meaning' | 'quiz-word' | null>(null);
+  const [matchGameType, setMatchGameType] = useState<'card-match-word' | 'card-match-meaning' | null>(null);
   const [gameType, setGameType] = useState<'fall' | 'speed' | null>(null);
   const [pendingStageId, setPendingStageId] = useState<number | null>(null);
   const canOpenPdfExport = !!selectedSubject;
@@ -1376,6 +1376,14 @@ export function GameMapQuizScreen({
 
   // Load vocabulary words from server
   useEffect(() => {
+    // ✅ If parent provided vocabularyWords, use them directly
+    if (propsVocabularyWords && propsVocabularyWords.length > 0) {
+      console.log(`[GameMapQuizScreen] ✅ Using ${propsVocabularyWords.length} words from props (unit-filtered)`);
+      setVocabularyWords(propsVocabularyWords);
+      setIsLoadingWords(false);
+      return;
+    }
+
     const vocabId = selectedSubject?.id;
 
     if (!vocabId) {
@@ -1500,7 +1508,7 @@ export function GameMapQuizScreen({
     return () => {
       isCancelled = true;
     };
-  }, [selectedSubject?.id, getAuthToken, refreshCounter]);
+  }, [propsVocabularyWords, selectedSubject?.id, getAuthToken, refreshCounter]);
 
 
   useEffect(() => {
@@ -1567,9 +1575,7 @@ export function GameMapQuizScreen({
 
     // Set game type once when starting (not on every render)
     if (mode === 'match') {
-      const rand = Math.random();
-      const type = rand < 0.33 ? 'card-match-word' : rand < 0.66 ? 'card-match-meaning' : 'quiz-word';
-      setMatchGameType(type);
+      setMatchGameType('card-match-word');
     } else if (mode === 'game') {
       setGameType(Math.random() > 0.5 ? 'fall' : 'speed');
     }
@@ -1595,13 +1601,9 @@ export function GameMapQuizScreen({
             return s;
           })
         );
-
-        const xpGained = (stage?.xpReward || 0) + correctCount * 10;
-        setSessionXP((prev) => prev + xpGained);
-        onXPGain(xpGained);
       }
     },
-    [currentStage, onXPGain]
+    [currentStage]
   );
 
   const handleAnswerSelect = (answerIndex: number) => {
@@ -1656,10 +1658,6 @@ export function GameMapQuizScreen({
     if (isCorrect) {
       setStageScore(prev => prev + 1);
       setCorrectAnswersCount(prev => prev + 1);
-      onXPGain(10);
-      setSessionXP(prev => prev + 10);
-      setShowConfetti(true);
-      setTimeout(() => setShowConfetti(false), 1000);
     } else {
       // 틀린 답변 추적 - 질문 ID를 단어 ID로 사용
       const wrongId = currentQ.wordId || currentQ.word;
@@ -1712,37 +1710,37 @@ export function GameMapQuizScreen({
       return s;
     }));
 
-    // Award stage completion XP
-    onXPGain(stage.xpReward);
-    setSessionXP(prev => prev + stage.xpReward);
-
-    setShowStageComplete(true);
-    
-    // Only show full completion screen for final stage
+    // Auto-advance to next stage or return to map
     if (currentStage === 5) {
+      // Calculate completion stats for the entire journey
+      const endTime = new Date();
+      const completionTimeMs = startTime ? endTime.getTime() - startTime.getTime() : 0;
+      const minutes = Math.floor(completionTimeMs / 60000);
+      const seconds = Math.floor((completionTimeMs % 60000) / 1000);
+      const completionTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
+
+      const totalQuestions = Object.values(questionBank).flat().length;
+      const accuracy = Math.round((correctAnswersCount / totalQuestions) * 100);
+
+      // Trigger full journey completion screen
+      onQuizCompletion({
+        xpGained: 0,
+        completionTime,
+        accuracy,
+        totalQuestions,
+        correctAnswers: correctAnswersCount,
+        stageName: journeyName
+      });
+    } else {
+      // Auto-advance to next stage after a short delay
       setTimeout(() => {
-        setShowStageComplete(false);
-        
-        // Calculate completion stats for the entire journey
-        const endTime = new Date();
-        const completionTimeMs = startTime ? endTime.getTime() - startTime.getTime() : 0;
-        const minutes = Math.floor(completionTimeMs / 60000);
-        const seconds = Math.floor((completionTimeMs % 60000) / 1000);
-        const completionTime = `${minutes}:${seconds.toString().padStart(2, '0')}`;
-        
-        const totalQuestions = Object.values(questionBank).flat().length;
-        const accuracy = Math.round((correctAnswersCount / totalQuestions) * 100);
-        
-        // Trigger full journey completion screen
-        onQuizCompletion({
-          xpGained: sessionXP,
-          completionTime,
-          accuracy,
-          totalQuestions,
-          correctAnswers: correctAnswersCount,
-          stageName: journeyName
-        });
-      }, 4000);
+        const nextStage = stages.find(s => s.id === currentStage + 1);
+        if (nextStage && nextStage.status !== 'locked') {
+          handleStageClick(currentStage + 1);
+        } else {
+          resetToMap();
+        }
+      }, 800);
     }
   };
 
@@ -1764,271 +1762,9 @@ export function GameMapQuizScreen({
     resetToMap();
   };
 
-  // Enhanced Confetti Component
-  const Confetti = () => (
-    <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
-      {[...Array(40)].map((_, i) => (
-        <motion.div
-          key={i}
-          initial={{ 
-            opacity: 1, 
-            y: -20, 
-            x: Math.random() * window.innerWidth,
-            rotate: 0,
-            scale: Math.random() * 0.5 + 0.5
-          }}
-          animate={{ 
-            opacity: 0, 
-            y: window.innerHeight + 100,
-            rotate: Math.random() * 720 + 360,
-            x: Math.random() * window.innerWidth
-          }}
-          transition={{ 
-            duration: Math.random() * 2 + 2,
-            delay: Math.random() * 1.5,
-            ease: "easeOut"
-          }}
-          className={`absolute w-3 h-3 rounded-full ${
-            i % 5 === 0 ? 'bg-yellow-400' :
-            i % 5 === 1 ? 'bg-blue-400' :
-            i % 5 === 2 ? 'bg-green-400' :
-            i % 5 === 3 ? 'bg-purple-400' :
-            'bg-pink-400'
-          }`}
-        />
-      ))}
-    </div>
-  );
 
 
 
-  if (showStageComplete && currentStage) {
-    const stage = stages.find(s => s.id === currentStage);
-    const nextStageAvailable = currentStage < 5;
-    
-    return (
-      <div className="h-full relative overflow-hidden">
-        <Confetti />
-
-        {/* Background Decorative Elements */}
-        <div className="absolute inset-0 overflow-hidden pointer-events-none rounded-3xl">
-          <motion.div
-            animate={{ 
-              scale: [1, 1.2, 1],
-              rotate: [0, 360, 0],
-              opacity: [0.1, 0.3, 0.1]
-            }}
-            transition={{ duration: 8, repeat: Infinity }}
-            className="absolute -top-32 -right-32 w-80 h-80 bg-gradient-to-br from-yellow-400/20 to-orange-400/20 rounded-full blur-3xl"
-          />
-          <motion.div
-            animate={{ 
-              scale: [1, 1.1, 1],
-              rotate: [0, -180, 0],
-              opacity: [0.1, 0.2, 0.1]
-            }}
-            transition={{ duration: 10, repeat: Infinity, delay: 2 }}
-            className="absolute -bottom-32 -left-32 w-96 h-96 bg-gradient-to-br from-green-400/20 to-blue-400/20 rounded-full blur-3xl"
-          />
-        </div>
-
-        {/* Content */}
-        <div className="relative z-10 h-full flex flex-col items-center justify-center px-6">
-          {/* Trophy/Success Animation */}
-          <motion.div
-            initial={{ scale: 0, rotate: -180 }}
-            animate={{ scale: 1, rotate: 0 }}
-            transition={{ 
-              type: "spring", 
-              stiffness: 200, 
-              damping: 15,
-              delay: 0.3 
-            }}
-            className="mb-8"
-          >
-            <div className="relative">
-              <div className={`w-32 h-32 rounded-full flex items-center justify-center shadow-2xl mt-8 ${
-                correctAnswersCount >= 4 
-                  ? "bg-gradient-to-br from-yellow-400 to-yellow-600 shadow-yellow-500/25" 
-                  : correctAnswersCount >= 2 
-                  ? "bg-gradient-to-br from-green-400 to-green-600 shadow-green-500/25"
-                  : "bg-gradient-to-br from-red-400 to-red-600 shadow-red-500/25"
-              }`}>
-                {correctAnswersCount >= 4 ? (
-                  <Trophy className="w-16 h-16 text-white" />
-                ) : correctAnswersCount >= 2 ? (
-                  <Star className="w-16 h-16 text-white" />
-                ) : (
-                  <Target className="w-16 h-16 text-white" />
-                )}
-              </div>
-              {/* Floating sparkles around trophy */}
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
-                className="absolute inset-0"
-              >
-                <Sparkles className="absolute -top-4 left-4 w-6 h-6 text-yellow-400" />
-                <Sparkles className="absolute top-4 -right-4 w-8 h-8 text-orange-400" />
-                <Sparkles className="absolute -bottom-4 right-4 w-5 h-5 text-yellow-500" />
-                <Sparkles className="absolute bottom-4 -left-4 w-6 h-6 text-orange-300" />
-              </motion.div>
-            </div>
-          </motion.div>
-
-          {/* Success Message */}
-          <motion.div
-            initial={{ opacity: 0, y: 30 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="text-center mb-8"
-          >
-            <h1 className="text-4xl font-bold bg-gradient-to-r from-[#091A7A] to-[#4F8EFF] bg-clip-text text-transparent mb-3 text-center">
-              {correctAnswersCount >= 4 ? "완벽해요!" : correctAnswersCount >= 2 ? "잘했어요!" : "다시 도전해요!"}
-            </h1>
-            <p className="text-lg text-[#4F8EFF] font-medium mb-1">{journeyName}</p>
-            <p className="text-sm text-gray-500">
-              {selectedQuizMode === 'match' ? '매치 퀴즈' : selectedQuizMode === 'game' ? '게임 모드' : '의미 퀴즈'}
-            </p>
-          </motion.div>
-
-          {/* Stats Card */}
-          <motion.div
-            initial={{ opacity: 0, y: 40 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.8 }}
-            className="bg-white/95 backdrop-blur-xl rounded-3xl p-8 shadow-lg border border-white/40 mb-8 w-full max-w-sm"
-          >
-            <div className="space-y-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
-                    <Target className="w-5 h-5 text-blue-600" />
-                  </div>
-                  <span className="font-medium text-[#091A7A]">정답</span>
-                </div>
-                <span className="text-xl font-bold text-[#091A7A]">{correctAnswersCount}/5</span>
-              </div>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-purple-100 rounded-xl flex items-center justify-center">
-                    <Sparkles className="w-5 h-5 text-purple-600" />
-                  </div>
-                  <span className="font-medium text-[#091A7A]">정확도</span>
-                </div>
-                <span className="text-xl font-bold text-[#091A7A]">{Math.round((correctAnswersCount / 5) * 100)}%</span>
-              </div>
-            </div>
-          </motion.div>
-
-          {/* Action Buttons */}
-          <div className="w-full max-w-sm space-y-4">
-            <motion.button
-              initial={{ opacity: 0, y: 30 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 1.0 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => {
-                setShowStageComplete(false);
-                if (stageScore >= 2 && nextStageAvailable) {
-                  // Proceed to next stage
-                  setCurrentStage(currentStage + 1);
-                  setCurrentQuestion(0);
-                  setStageScore(0);
-                  setSelectedAnswer(null);
-                  setShowFeedback(false);
-                  setStartTime(new Date());
-                  setCorrectAnswersCount(0);
-                } else {
-                  // Retry current stage
-                  setCurrentQuestion(0);
-                  setStageScore(0);
-                  setSelectedAnswer(null);
-                  setShowFeedback(false);
-                  setStartTime(new Date());
-                  setCorrectAnswersCount(0);
-                }
-              }}
-              className="w-full bg-gradient-to-r from-[#091A7A] to-[#4F8EFF] text-white py-4 rounded-2xl font-semibold shadow-lg flex items-center justify-center gap-2"
-            >
-              <span>{stageScore >= 2 && nextStageAvailable ? "Next Stage" : "Retry Stage"}</span>
-              <motion.div
-                animate={{ x: [0, 4, 0] }}
-                transition={{ duration: 1.5, repeat: Infinity }}
-              >
-                <ArrowLeft className="w-5 h-5 rotate-180" />
-              </motion.div>
-            </motion.button>
-            
-            <div className="flex gap-3 justify-center">
-              {stageScore >= 2 ? (
-                <>
-                  <motion.button
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 1.1 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={onBack}
-                    className="flex-1 bg-white/90 backdrop-blur-xl border border-white/40 text-[#091A7A] py-3 rounded-2xl font-medium shadow-sm text-center"
-                  >
-                    Back
-                  </motion.button>
-
-                  <motion.button
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 1.2 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={() => {
-                      setShowStageComplete(false);
-                      setCurrentQuestion(0);
-                      setStageScore(0);
-                      setSelectedAnswer(null);
-                      setShowFeedback(false);
-                      setStartTime(new Date());
-                      setCorrectAnswersCount(0);
-                    }}
-                    className="flex-1 bg-white/90 backdrop-blur-xl border border-white/40 text-[#091A7A] py-3 rounded-2xl font-medium shadow-sm text-center"
-                  >
-                    Retry Stage
-                  </motion.button>
-                </>
-              ) : (
-                <>
-                  <motion.button
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 1.1 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={resetToMap}
-                    className="flex-1 bg-white/90 backdrop-blur-xl border border-white/40 text-[#091A7A] py-3 rounded-2xl font-medium shadow-sm text-center"
-                  >
-                    View Map
-                  </motion.button>
-
-                  <motion.button
-                    initial={{ opacity: 0, y: 30 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 1.2 }}
-                    whileHover={{ scale: 1.02 }}
-                    whileTap={{ scale: 0.98 }}
-                    onClick={onBack}
-                    className="flex-1 bg-white/90 backdrop-blur-xl border border-white/40 text-[#091A7A] py-3 rounded-2xl font-medium shadow-sm text-center"
-                  >
-                    Back
-                  </motion.button>
-                </>
-              )}
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   if (currentStage) {
     const stage = stages.find(s => s.id === currentStage);
@@ -2101,8 +1837,6 @@ export function GameMapQuizScreen({
         isMultiSelect={isMultiSelect}
         isSentenceQuestion={Boolean(isSentenceQuestion)}
         sentenceTranslationVisible={showSentenceTranslation}
-        showConfetti={showConfetti}
-        ConfettiComponent={Confetti}
         onBack={resetToMap}
         onBackToHome={onBackToHome}
         onAnswerSelect={handleAnswerSelect}

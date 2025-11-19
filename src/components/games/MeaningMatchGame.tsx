@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { CheckCircle, X, Shuffle, Sparkles, Trophy, Target } from 'lucide-react';
+import { CheckCircle, X, Shuffle, Sparkles, Trophy, Target, ChevronRight } from 'lucide-react';
 
 interface MeaningMatchGameProps {
   words: Array<{
@@ -19,9 +19,14 @@ interface MatchCard {
   type: 'left' | 'right';
   matched: boolean;
   wordId: string;
+  isWord: boolean;
 }
 
+const WORDS_PER_PAGE = 5;
+
 export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: MeaningMatchGameProps) {
+  const [allShuffledWords, setAllShuffledWords] = useState<typeof words>([]);
+  const [currentPage, setCurrentPage] = useState(0);
   const [leftCards, setLeftCards] = useState<MatchCard[]>([]);
   const [rightCards, setRightCards] = useState<MatchCard[]>([]);
   const [selectedLeft, setSelectedLeft] = useState<string | null>(null);
@@ -30,16 +35,30 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
   const [wrongAttempt, setWrongAttempt] = useState<{ left: string; right: string } | null>(null);
   const [score, setScore] = useState(0);
   const [attempts, setAttempts] = useState(0);
+  const [totalScore, setTotalScore] = useState(0);
 
+  const totalPages = Math.ceil(words.length / WORDS_PER_PAGE);
+
+  // Initialize: shuffle all words once
   useEffect(() => {
-    initializeGame();
+    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    setAllShuffledWords(shuffled);
+    setCurrentPage(0);
+    setTotalScore(0);
   }, [words, mode]);
 
-  const initializeGame = () => {
-    // Take up to 5 random words for the matching game
-    const shuffledWords = [...words].sort(() => Math.random() - 0.5);
-    const gameWords = shuffledWords.slice(0, 5);
-    
+  // Load current page
+  useEffect(() => {
+    if (allShuffledWords.length === 0) return;
+
+    const startIdx = currentPage * WORDS_PER_PAGE;
+    const endIdx = Math.min(startIdx + WORDS_PER_PAGE, allShuffledWords.length);
+    const pageWords = allShuffledWords.slice(startIdx, endIdx);
+
+    initializePage(pageWords);
+  }, [allShuffledWords, currentPage, mode]);
+
+  const initializePage = (pageWords: typeof words) => {
     // Shuffle function
     const shuffle = <T,>(array: T[]): T[] => {
       const shuffled = [...array];
@@ -52,40 +71,44 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
 
     if (mode === 'word-to-meaning') {
       // Left: words, Right: meanings
-      const left: MatchCard[] = gameWords.map((w, i) => ({
-        id: `left-${i}`,
+      const left: MatchCard[] = pageWords.map((w, i) => ({
+        id: `left-${currentPage}-${i}`,
         content: w.word,
         type: 'left' as const,
         matched: false,
-        wordId: w.id
+        wordId: w.id,
+        isWord: true
       }));
 
-      const right: MatchCard[] = shuffle(gameWords.map((w, i) => ({
-        id: `right-${i}`,
+      const right: MatchCard[] = shuffle(pageWords.map((w, i) => ({
+        id: `right-${currentPage}-${i}`,
         content: w.meaning,
         type: 'right' as const,
         matched: false,
-        wordId: w.id
+        wordId: w.id,
+        isWord: false
       })));
 
       setLeftCards(left);
       setRightCards(right);
     } else {
       // Left: meanings, Right: words
-      const left: MatchCard[] = gameWords.map((w, i) => ({
-        id: `left-${i}`,
+      const left: MatchCard[] = pageWords.map((w, i) => ({
+        id: `left-${currentPage}-${i}`,
         content: w.meaning,
         type: 'left' as const,
         matched: false,
-        wordId: w.id
+        wordId: w.id,
+        isWord: false
       }));
 
-      const right: MatchCard[] = shuffle(gameWords.map((w, i) => ({
-        id: `right-${i}`,
+      const right: MatchCard[] = shuffle(pageWords.map((w, i) => ({
+        id: `right-${currentPage}-${i}`,
         content: w.word,
         type: 'right' as const,
         matched: false,
-        wordId: w.id
+        wordId: w.id,
+        isWord: true
       })));
 
       setLeftCards(left);
@@ -130,22 +153,29 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
       newMatched.add(rightCard.id);
       setMatchedPairs(newMatched);
 
-      setLeftCards(prev => prev.map(c => 
+      setLeftCards(prev => prev.map(c =>
         c.id === leftCard.id ? { ...c, matched: true } : c
       ));
-      setRightCards(prev => prev.map(c => 
+      setRightCards(prev => prev.map(c =>
         c.id === rightCard.id ? { ...c, matched: true } : c
       ));
 
       setScore(prev => prev + 1);
+      setTotalScore(prev => prev + 1);
       setSelectedLeft(null);
       setSelectedRight(null);
 
-      // Check if game is complete
+      // Check if current page is complete
       if (newMatched.size === leftCards.length * 2) {
         setTimeout(() => {
-          onComplete(score + 1, score + 1);
-        }, 1000);
+          if (currentPage < totalPages - 1) {
+            // Move to next page
+            setCurrentPage(prev => prev + 1);
+          } else {
+            // All pages complete!
+            onComplete(totalScore + 1, totalScore + 1);
+          }
+        }, 800);
       }
     } else {
       // Wrong match
@@ -153,7 +183,7 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
       if (onWrongAnswer) {
         onWrongAnswer(leftCard.wordId);
       }
-      
+
       setTimeout(() => {
         setWrongAttempt(null);
         setSelectedLeft(null);
@@ -178,26 +208,25 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
   return (
     <div className="h-full bg-transparent overflow-y-auto">
       <div className="max-w-4xl mx-auto w-full px-4 py-6 space-y-5">
-        <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-5 shadow-card border border-white/60">
-          <div className="flex flex-col gap-4 md:flex-row md:items-center">
+        <div className="bg-white/95 backdrop-blur-xl rounded-3xl p-4 shadow-card border border-white/60">
+          <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] rounded-2xl flex items-center justify-center">
-                <Target className="w-6 h-6 text-white" />
+              <div className="w-10 h-10 bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] rounded-2xl flex items-center justify-center">
+                <Target className="w-5 h-5 text-white" />
               </div>
               <div>
                 <p className="text-sm font-semibold text-[#5B21B6]">
-                  {mode === 'word-to-meaning' ? '단어 → 뜻' : '뜻 → 단어'}
+                  {mode === 'word-to-meaning' ? '뜻 → 단어' : '단어 → 뜻'}
                 </p>
                 <p className="text-xs font-medium text-[#8B5CF6]">
-                  카드를 터치해서 짝을 맞추세요
+                  세트 {currentPage + 1}/{totalPages}
                 </p>
               </div>
             </div>
-            <div className="md:ml-auto text-right">
+            <div className="text-right">
               <div className="text-2xl font-extrabold text-[#5B21B6]">
-                {score}/{leftCards.length}
+                {totalScore}/{words.length}
               </div>
-              <div className="text-xs text-[#8B5CF6]">{attempts} 시도</div>
             </div>
           </div>
         </div>
@@ -217,7 +246,7 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
                 style={{ touchAction: 'manipulation' }}
               >
                 <div className="flex flex-col items-center justify-center gap-1">
-                  <span className="text-sm font-semibold text-[#2E1065]">{card.content}</span>
+                  <span className={`${card.isWord ? 'text-sm' : 'text-xs'} font-semibold text-[#2E1065]`}>{card.content}</span>
                   {card.matched && <CheckCircle className="w-4 h-4 text-emerald-600" />}
                 </div>
               </motion.button>
@@ -238,22 +267,13 @@ export function MeaningMatchGame({ words, mode, onComplete, onWrongAnswer }: Mea
                 style={{ touchAction: 'manipulation' }}
               >
                 <div className="flex flex-col items-center justify-center gap-1">
-                  <span className="text-sm font-semibold text-[#2E1065]">{card.content}</span>
+                  <span className={`${card.isWord ? 'text-sm' : 'text-xs'} font-semibold text-[#2E1065]`}>{card.content}</span>
                   {card.matched && <CheckCircle className="w-4 h-4 text-emerald-600" />}
                 </div>
               </motion.button>
             ))}
           </div>
         </div>
-
-        <motion.button
-          whileTap={{ scale: 0.97 }}
-          onClick={initializeGame}
-          className="w-full py-3 bg-gradient-to-r from-[#7C3AED] to-[#A78BFA] text-white rounded-2xl flex items-center justify-center gap-2 font-semibold shadow-card"
-        >
-          <Shuffle className="w-5 h-5" />
-          다시 섞기
-        </motion.button>
       </div>
     </div>
   );
