@@ -231,7 +231,9 @@ export default function App() {
 
   // Refresh current vocabulary data (invalidate cache and reload)
   const refreshCurrentVocabulary = useCallback(async () => {
+    console.log('[App] refreshCurrentVocabulary called, selectedVocabulary:', selectedVocabulary);
     if (!selectedVocabulary?.id) {
+      console.log('[App] No selectedVocabulary.id, skipping refresh');
       return;
     }
 
@@ -239,17 +241,21 @@ export default function App() {
       ? `${selectedVocabulary.id}-unit-${selectedVocabulary.unitNumber}`
       : selectedVocabulary.id;
 
+    console.log('[App] Invalidating cache for key:', cacheKey);
     // Invalidate cache
     delete vocabularyCacheRef.current[cacheKey];
 
     // Reload vocabulary
     try {
       setIsLoadingVocabulary(true);
+      console.log('[App] Fetching fresh vocabulary data...');
       const words = await fetchVocabulary(selectedVocabulary.id, selectedVocabulary.unitNumber);
+      console.log(`[App] Fetched ${words.length} words`);
       vocabularyCacheRef.current[cacheKey] = words;
       setVocabularyWords(words);
+      console.log('[App] vocabularyWords state updated');
     } catch (error) {
-      console.error('Error refreshing vocabulary:', error);
+      console.error('[App] Error refreshing vocabulary:', error);
     } finally {
       setIsLoadingVocabulary(false);
     }

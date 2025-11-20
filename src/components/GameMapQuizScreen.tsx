@@ -1320,7 +1320,23 @@ export function GameMapQuizScreen({
     specialSignatureRef.current.wrongAnswers = signature;
     invalidateVocabulary('wrong-answers');
   }, [wrongAnswersWordIds, invalidateVocabulary]);
-  
+
+  // Refresh vocabulary function for WordListScreen
+  const refreshVocabulary = useCallback(async () => {
+    console.log('[GameMapQuizScreen] refreshVocabulary called');
+    // If parent provided onRefreshVocabulary, use that
+    if (onRefreshVocabulary) {
+      console.log('[GameMapQuizScreen] Using parent onRefreshVocabulary');
+      await onRefreshVocabulary();
+      return;
+    }
+    // Otherwise, invalidate our own cache
+    console.log('[GameMapQuizScreen] Using local invalidateVocabulary for:', vocabularyId);
+    if (vocabularyId) {
+      invalidateVocabulary(vocabularyId);
+    }
+  }, [onRefreshVocabulary, vocabularyId, invalidateVocabulary]);
+
   // 각 스테이지별 모드별 완료 여부 추적
   const [completedModes, setCompletedModes] = useState<Record<number, Set<'normal' | 'match' | 'game'>>>({
     1: new Set(),
@@ -2001,7 +2017,7 @@ export function GameMapQuizScreen({
                   console.log('[GameMapQuizScreen] 💜 Flashcard button clicked in WordList! Setting activeTab to flashcards');
                   setActiveTab('flashcards');
                 }}
-                onRefreshVocabulary={onRefreshVocabulary}
+                onRefreshVocabulary={refreshVocabulary}
                 hideHeader={true}
               />
             </motion.div>
@@ -2298,7 +2314,7 @@ export function GameMapQuizScreen({
                 vocabularyTitle={selectedSubject?.name}
                 onAddToStarred={onAddToStarred}
                 onMoveToGraveyard={onMoveToGraveyard}
-                onRefreshVocabulary={onRefreshVocabulary}
+                onRefreshVocabulary={refreshVocabulary}
                 hideHeader={true}
               />
             </motion.div>

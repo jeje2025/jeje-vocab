@@ -1306,13 +1306,19 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
         onRemoveWord={removeBasketWord}
         onClear={clearBasket}
         onActionComplete={async () => {
+          console.log('[WordListScreen] onActionComplete started');
           setShowBasketModal(false);
           // Invalidate vocabulary list cache to show new/updated vocabularies
           const { invalidateVocabularyListCache } = await import('./VocabularyListScreen');
           invalidateVocabularyListCache();
+          console.log('[WordListScreen] Vocabulary list cache invalidated');
           // Refresh current vocabulary if applicable
           if (onRefreshVocabulary) {
+            console.log('[WordListScreen] Calling onRefreshVocabulary...');
             await onRefreshVocabulary();
+            console.log('[WordListScreen] onRefreshVocabulary completed');
+          } else {
+            console.log('[WordListScreen] No onRefreshVocabulary provided');
           }
         }}
         currentVocabularyId={vocabularyId}
