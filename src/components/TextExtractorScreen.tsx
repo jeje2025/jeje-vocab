@@ -231,10 +231,11 @@ export function TextExtractorScreen({ onBack, onNavigateToTutor }: TextExtractor
 
   // Auto-focus on question input when modal opens
   useEffect(() => {
-    if (showQuestionModal && questionInputRef.current) {
+    if (showQuestionModal) {
+      // Wait for modal animation to complete before focusing
       setTimeout(() => {
         questionInputRef.current?.focus();
-      }, 100);
+      }, 200);
     }
   }, [showQuestionModal]);
 
