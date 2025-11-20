@@ -13,7 +13,10 @@ const defaultOptions: Required<RenderOptions> = {
 };
 
 const renderInlineText = (line: string, keyPrefix: string, boldClassName: string) => {
-  const parts = line.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
+  // Convert --text-- to **text** format first
+  const normalizedLine = line.replace(/--([^-]+)--/g, '**$1**');
+
+  const parts = normalizedLine.split(/(\*\*[^*]+\*\*)/g).filter(Boolean);
   return parts.map((part, index) => {
     if (part.startsWith('**') && part.endsWith('**')) {
       return (

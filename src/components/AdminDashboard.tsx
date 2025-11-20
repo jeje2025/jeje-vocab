@@ -1385,6 +1385,12 @@ function UserRow({
 }) {
   const [isEditing, setIsEditing] = useState(false);
   const [role, setRole] = useState(user.role);
+  const stats = user.stats || {};
+  const lastActiveRaw = user.lastActive || user.lastSignInAt || user.createdAt;
+  const lastActiveDate = lastActiveRaw ? new Date(lastActiveRaw) : null;
+  const formattedLastActive = lastActiveDate && !Number.isNaN(lastActiveDate.getTime())
+    ? lastActiveDate.toLocaleDateString()
+    : 'Never';
 
   const handleSave = () => {
     onUpdatePermissions(user.id, role, user.permissions);
@@ -1421,14 +1427,14 @@ function UserRow({
       </td>
       <td className="px-6 py-4">
         <div className="text-xs text-gray-600 space-y-1">
-          <div>단어장: {user.stats?.vocabulariesCreated || 0}</div>
-          <div>퀴즈: {user.stats?.quizzesCompleted || 0}</div>
-          <div>XP: {user.stats?.xp || 0}</div>
+          <div>단어장: {stats.vocabulariesCreated ?? 0}</div>
+          <div>퀴즈: {stats.quizzesCompleted ?? 0}</div>
+          <div>XP: {stats.xp ?? 0}</div>
         </div>
       </td>
       <td className="px-6 py-4">
         <span className="text-sm text-gray-600">
-          {new Date(user.lastActive).toLocaleDateString()}
+          {formattedLastActive}
         </span>
       </td>
       <td className="px-6 py-4">

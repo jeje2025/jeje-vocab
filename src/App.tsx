@@ -45,6 +45,7 @@ export type Screen =
   | 'game-map-quiz'
   | 'quiz-completion'
   | 'ai'
+  | 'ai-tutor'
   | 'profile'
   | 'subject-detail'
   | 'videos'
@@ -68,6 +69,7 @@ const SCREEN_TO_PATH: Record<Screen, string> = {
   'game-map-quiz': '/game-map-quiz',
   'quiz-completion': '/quiz-completion',
   ai: '/ai',
+  'ai-tutor': '/ai-tutor',
   profile: '/profile',
   'subject-detail': '/subject-detail',
   videos: '/videos',
@@ -226,6 +228,41 @@ export default function App() {
     }
     setSelectedVocabulary({ id, title, unitNumber });
   };
+
+  // Refresh current vocabulary data (invalidate cache and reload)
+  const refreshCurrentVocabulary = useCallback(async () => {
+    console.log('[App] refreshCurrentVocabulary called');
+    console.log('[App] selectedVocabulary:', selectedVocabulary);
+
+    if (!selectedVocabulary?.id) {
+      console.warn('[App] No selectedVocabulary.id, skipping refresh');
+      return;
+    }
+
+    const cacheKey = selectedVocabulary.unitNumber
+      ? `${selectedVocabulary.id}-unit-${selectedVocabulary.unitNumber}`
+      : selectedVocabulary.id;
+
+    console.log('[App] Cache key:', cacheKey);
+    console.log('[App] Invalidating cache and reloading...');
+
+    // Invalidate cache
+    delete vocabularyCacheRef.current[cacheKey];
+
+    // Reload vocabulary
+    try {
+      setIsLoadingVocabulary(true);
+      const words = await fetchVocabulary(selectedVocabulary.id, selectedVocabulary.unitNumber);
+      console.log(`✅ [App] Refreshed ${words.length} words for vocabulary`);
+      vocabularyCacheRef.current[cacheKey] = words;
+      setVocabularyWords(words);
+      console.log('[App] vocabularyWords state updated');
+    } catch (error) {
+      console.error('❌ [App] Error refreshing vocabulary:', error);
+    } finally {
+      setIsLoadingVocabulary(false);
+    }
+  }, [selectedVocabulary?.id, selectedVocabulary?.unitNumber]);
 
   const handleSubjectClick = (subject: Subject) => {
     setSelectedSubject(subject);
@@ -646,6 +683,7 @@ export default function App() {
           stageName={completionData.stageName}
         />;
       case 'ai':
+      case 'ai-tutor':
         return <AITutorScreen onBack={navigateBack} />;
       case 'profile':
         return <ProfileScreen onBack={navigateBack} userXP={userXP} profileImage={profileImage} levelProgress={levelProgress} />;
@@ -698,7 +736,15 @@ export default function App() {
           lessonTitle={selectedLesson || 'Introduction to Algebra'}
         />;
       case 'text-extractor':
-        return <TextExtractorScreen onBack={navigateBack} />;
+        return <TextExtractorScreen
+          onBack={navigateBack}
+          onNavigateToTutor={(question, context) => {
+            // Store the context and question for AI Tutor
+            sessionStorage.setItem('tutorContext', context);
+            sessionStorage.setItem('tutorInitialQuestion', question);
+            navigateToScreen('ai-tutor');
+          }}
+        />;
       case 'word-list':
         if (!selectedSubject) return null;
 
@@ -733,6 +779,9 @@ export default function App() {
               onMoveToGraveyard={wordLists.moveToGraveyard}
               onDeletePermanently={wordLists.deletePermanently}
               getAuthToken={auth.getAuthToken}
+              onRefreshVocabulary={refreshCurrentVocabulary}
+              vocabularyId={selectedVocabulary?.id}
+              isLoading={isLoadingVocabulary}
             />
           );
         }
@@ -750,6 +799,8 @@ export default function App() {
               starredWordIds={wordLists.starredWords}
               graveyardWordIds={wordLists.graveyardWords}
               wrongAnswersWordIds={wordLists.wrongAnswersWords}
+              isLoading={isLoadingVocabulary}
+              vocabularyId={selectedVocabulary?.id}
               onAddToStarred={wordLists.toggleStarred}
               onMoveToGraveyard={wordLists.moveToGraveyard}
               onDeletePermanently={wordLists.deletePermanently}
@@ -757,6 +808,7 @@ export default function App() {
                 console.log('[App] onStartFlashcards called, navigating to flashcard');
                 navigateToScreen('flashcard');
               }}
+              onRefreshVocabulary={refreshCurrentVocabulary}
             />
           );
         }
@@ -774,6 +826,7 @@ export default function App() {
             graveyardWordIds={wordLists.graveyardWords}
             wrongAnswersWordIds={wordLists.wrongAnswersWords}
             isLoading={isLoadingVocabulary}
+            vocabularyId={selectedVocabulary?.id}
             onAddToStarred={wordLists.toggleStarred}
             onMoveToGraveyard={wordLists.moveToGraveyard}
             onDeletePermanently={wordLists.deletePermanently}
@@ -781,6 +834,7 @@ export default function App() {
               console.log('[App] onStartFlashcards called, navigating to flashcard');
               navigateToScreen('flashcard');
             }}
+            onRefreshVocabulary={refreshCurrentVocabulary}
           />
         );
       case 'flashcard':
@@ -788,14 +842,17 @@ export default function App() {
         console.log('[App] starredWords:', wordLists.starredWords);
         console.log('[App] graveyardWords:', wordLists.graveyardWords);
         console.log('[App] vocabularyWords for flashcard:', vocabularyWords.length);
-        return <FlashcardScreen 
-          onBack={navigateBack} 
+        return <FlashcardScreen
+          onBack={navigateBack}
           onBackToHome={handleBackToHome}
           vocabularyWords={vocabularyWords}
           starredWordIds={wordLists.starredWords}
           graveyardWordIds={wordLists.graveyardWords}
           onAddToStarred={wordLists.toggleStarred}
           onMoveToGraveyard={wordLists.moveToGraveyard}
+          vocabularyId={selectedVocabulary?.id}
+          vocabularyTitle={selectedVocabulary?.title}
+          onRefreshVocabulary={refreshCurrentVocabulary}
         />;
       case 'zombie-game':
         return <ZombieGameScreen
@@ -804,11 +861,66 @@ export default function App() {
           onBackToHome={handleBackToHome}
         />;
       case 'gift':
-        return <GiftScreen 
-          onBack={navigateBack} 
-          onSelectVocabulary={(vocab) => {
-            setSelectedSharedVocabulary(vocab);
-            navigateToScreen('word-selection');
+        return <GiftScreen
+          onBack={navigateBack}
+          onSelectVocabulary={async (vocab) => {
+            console.log('📚 Adding shared vocabulary:', vocab.title);
+
+            try {
+              // Get all words from the shared vocabulary
+              const wordsResponse = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/server/shared-vocabulary/${vocab.id}/words`,
+                {
+                  headers: {
+                    'Authorization': `Bearer ${publicAnonKey}`,
+                  },
+                }
+              );
+
+              const wordsData = await wordsResponse.json();
+              const allWords = wordsData.words || [];
+              const selectedWordIds = allWords.map((w: any) => w.id);
+
+              console.log(`📦 Adding ${selectedWordIds.length} words...`);
+
+              // Call API to add to user collection
+              const addResponse = await fetch(
+                `https://${projectId}.supabase.co/functions/v1/server/user-vocabularies/add-shared`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${auth.getAuthToken()}`,
+                  },
+                  body: JSON.stringify({
+                    sharedVocabularyId: vocab.id,
+                    selectedWordIds,
+                  }),
+                }
+              );
+
+              const result = await addResponse.json();
+
+              if (!addResponse.ok) {
+                console.error('❌ Server error:', addResponse.status, result);
+                throw new Error(result.error || `Server error: ${addResponse.status}`);
+              }
+
+              if (result.vocabulary) {
+                console.log('✅ Successfully added vocabulary to user collection');
+
+                // Invalidate cache and refresh
+                invalidateVocabularyListCache();
+                await wordLists.refreshMyVocabularies();
+
+                alert(`"${vocab.title}" 단어장이 추가되었습니다! (${selectedWordIds.length}개 단어)`);
+              } else {
+                throw new Error(result.error || 'Failed to add vocabulary');
+              }
+            } catch (error) {
+              console.error('❌ Error adding vocabulary:', error);
+              alert(`단어장 추가에 실패했습니다: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+            }
           }}
         />;
       case 'word-selection':
@@ -1084,6 +1196,9 @@ export default function App() {
       {/* Bottom Navigation - Fixed positioning - Hidden on opening, signup, welcome, subject detail, lesson player, game map quiz, vocabulary list, word list, full-calendar, and completion screens */}
       {currentScreen !== 'login' && currentScreen !== 'signup' && currentScreen !== 'opening' && currentScreen !== 'welcome' && currentScreen !== 'subject-detail' && currentScreen !== 'lesson-player' && currentScreen !== 'game-map-quiz' && currentScreen !== 'vocabulary-list' && currentScreen !== 'word-list' && currentScreen !== 'quiz-completion' && currentScreen !== 'full-calendar' && !selectedSharedVocabulary && (
         <BottomNavigation currentScreen={currentScreen} onScreenChange={(screen) => {
+          // Scroll to top on tab change (instant to avoid flickering)
+          window.scrollTo({ top: 0, behavior: 'instant' });
+
           if (screen === 'home') {
             handleBackToHome();
           } else {

@@ -33,15 +33,18 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
   const [currentBatchWords, setCurrentBatchWords] = useState<WordItem[]>([]);
   const [clearedWordIds, setClearedWordIds] = useState<Set<string>>(new Set());
   const [showCongrats, setShowCongrats] = useState(false);
+  const [showBatchComplete, setShowBatchComplete] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [currentBatchIndex, setCurrentBatchIndex] = useState(0);
 
   const BATCH_SIZE = 8; // 8 words = 16 cards (4x4 grid)
-  const MIN_CARDS_THRESHOLD = 8; // Refill when 8 cards remain
 
-  // Initialize game with first batch
-  const initializeBatch = useCallback((wordList: WordItem[]) => {
-    const batchWords = wordList.slice(0, BATCH_SIZE);
+  // Initialize game with specific batch
+  const initializeBatch = useCallback((wordList: WordItem[], batchIndex: number) => {
+    const startIdx = batchIndex * BATCH_SIZE;
+    const batchWords = wordList.slice(startIdx, startIdx + BATCH_SIZE);
     setCurrentBatchWords(batchWords);
+    setCurrentBatchIndex(batchIndex);
 
     // Create cards (word + meaning for each word)
     const newCards: Card[] = [];
@@ -69,13 +72,14 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     setCards(shuffled);
     setMatchedPairs(0);
     setFlippedCards([]);
+    setShowBatchComplete(false);
   }, []);
 
   // Start game
   useEffect(() => {
     if (words.length > 0) {
       setRemainingWords(words);
-      initializeBatch(words);
+      initializeBatch(words, 0);
     }
   }, [words, initializeBatch]);
 
@@ -124,24 +128,26 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
           setFlippedCards([]);
           setIsProcessing(false);
 
-          // Check if we need to refill
+          // Check if all cards in current batch are matched
           const activeCards = cards.filter((c) => !c.isMatched && c.wordId !== card.wordId);
-          if (activeCards.length <= MIN_CARDS_THRESHOLD) {
-            // Get next batch of words
-            const nextWords = remainingWords.filter(
-              (w) => !clearedWordIds.has(w.id) && w.id !== card.wordId
-            );
+          if (activeCards.length === 0) {
+            // Current batch completed!
+            const nextBatchStartIdx = (currentBatchIndex + 1) * BATCH_SIZE;
+            const hasMoreBatches = nextBatchStartIdx < remainingWords.length;
 
-            if (nextWords.length > 0) {
+            if (hasMoreBatches) {
+              // Show batch complete modal
               setTimeout(() => {
-                addMoreCards(nextWords, activeCards);
+                setShowBatchComplete(true);
               }, 500);
-            } else if (activeCards.length === 0) {
+            } else {
               // All words cleared!
-              setShowCongrats(true);
-              if (onGameComplete) {
-                onGameComplete();
-              }
+              setTimeout(() => {
+                setShowCongrats(true);
+                if (onGameComplete) {
+                  onGameComplete();
+                }
+              }, 500);
             }
           }
         }, 600);
@@ -160,43 +166,10 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     }
   };
 
-  // Add more cards to the grid
-  const addMoreCards = (availableWords: WordItem[], existingActiveCards: Card[]) => {
-    const neededPairs = Math.ceil((16 - existingActiveCards.length) / 2);
-    const newBatchWords = availableWords.slice(0, neededPairs);
-
-    if (newBatchWords.length === 0) return;
-
-    const newCards: Card[] = [];
-    newBatchWords.forEach((word) => {
-      newCards.push({
-        id: `${word.id}-word-${Date.now()}`,
-        wordId: word.id,
-        content: word.word,
-        type: 'word',
-        isFlipped: false,
-        isMatched: false,
-      });
-      newCards.push({
-        id: `${word.id}-meaning-${Date.now()}`,
-        wordId: word.id,
-        content: word.meaning,
-        type: 'meaning',
-        isFlipped: false,
-        isMatched: false,
-      });
-    });
-
-    // Only shuffle new cards, keep existing cards in their positions
-    const shuffledNewCards = newCards.sort(() => Math.random() - 0.5);
-
-    // Add new cards to the end (they'll fill in where matched cards were removed)
-    setCards(prev => {
-      // Keep unmatched cards in place, add new cards
-      const activeOldCards = prev.filter(c => !c.isMatched);
-      return [...activeOldCards, ...shuffledNewCards];
-    });
-    setCurrentBatchWords((prev) => [...prev.filter((w) => !clearedWordIds.has(w.id)), ...newBatchWords]);
+  // Go to next batch
+  const goToNextBatch = () => {
+    const nextBatchIndex = currentBatchIndex + 1;
+    initializeBatch(remainingWords, nextBatchIndex);
   };
 
   // Reset game
@@ -205,7 +178,9 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     setRemainingWords(words);
     setMoves(0);
     setShowCongrats(false);
-    initializeBatch(words);
+    setShowBatchComplete(false);
+    setCurrentBatchIndex(0);
+    initializeBatch(words, 0);
   };
 
   const activeCardsCount = cards.filter((c) => !c.isMatched).length;
@@ -213,6 +188,8 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
   const activeWordCards = cards.filter((c) => !c.isMatched && c.type === 'word');
   const totalCleared = clearedWordIds.size;
   const totalWords = words.length;
+  const totalBatches = Math.ceil(totalWords / BATCH_SIZE);
+  const currentBatchNumber = currentBatchIndex + 1;
 
   return (
     <motion.div
@@ -252,6 +229,10 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
       {/* Stats */}
       <div className="flex justify-center gap-6 p-3 bg-white/60">
         <div className="text-center">
+          <p className="text-xs text-red-500 font-medium">라운드</p>
+          <p className="text-lg font-bold text-red-700">{currentBatchNumber}/{totalBatches}</p>
+        </div>
+        <div className="text-center">
           <p className="text-xs text-red-500 font-medium">탈출 완료</p>
           <p className="text-lg font-bold text-red-700">{totalCleared}/{totalWords}</p>
         </div>
@@ -259,21 +240,16 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
           <p className="text-xs text-red-500 font-medium">시도 횟수</p>
           <p className="text-lg font-bold text-red-700">{moves}</p>
         </div>
-        <div className="text-center">
-          <p className="text-xs text-red-500 font-medium">남은 카드</p>
-          <p className="text-lg font-bold text-red-700">{activeCardsCount}</p>
-        </div>
       </div>
 
       {/* Game Grid - 4 columns (2 for meanings, 2 for words) */}
       <div className="flex-1 p-4 overflow-y-auto">
         <div className="grid grid-cols-4 gap-3" style={{ gridAutoRows: 'minmax(80px, auto)' }}>
-          <AnimatePresence mode="popLayout">
+          <AnimatePresence>
             {/* Left 2 columns: Meanings (lighter color) */}
             {activeMeaningCards.map((card) => (
               <motion.div
                 key={card.id}
-                layout
                 initial={{ scale: 0, rotateY: 180 }}
                 animate={{ scale: 1, rotateY: 0 }}
                 exit={{ scale: 0, opacity: 0 }}
@@ -326,7 +302,6 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
             {activeWordCards.map((card) => (
               <motion.div
                 key={card.id}
-                layout
                 initial={{ scale: 0, rotateY: 180 }}
                 animate={{ scale: 1, rotateY: 0 }}
                 exit={{ scale: 0, opacity: 0 }}
@@ -377,6 +352,39 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
           </AnimatePresence>
         </div>
       </div>
+
+      {/* Batch Complete Modal */}
+      <AnimatePresence>
+        {showBatchComplete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/50 flex items-center justify-center z-60"
+          >
+            <motion.div
+              initial={{ scale: 0.5, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.5, y: 50 }}
+              className="bg-white rounded-2xl p-8 mx-4 text-center shadow-2xl"
+            >
+              <div className="text-5xl mb-4">🎯</div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">라운드 {currentBatchNumber} 클리어!</h3>
+              <p className="text-gray-600 mb-1">{currentBatchWords.length}개 단어를 탈출했어요</p>
+              <p className="text-sm text-gray-500 mb-6">
+                다음 라운드로 이동하세요 ({currentBatchNumber}/{totalBatches})
+              </p>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={goToNextBatch}
+                className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-semibold"
+              >
+                다음 라운드 시작 →
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Congratulations Modal */}
       <AnimatePresence>

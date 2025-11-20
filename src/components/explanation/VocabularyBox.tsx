@@ -1,6 +1,7 @@
-import { Check } from 'lucide-react';
+import { Check, Plus } from 'lucide-react';
 import { motion } from 'motion/react';
 import { BasketWord } from '../../hooks/useWordBasket';
+import { useState } from 'react';
 
 interface VocabWord {
   word: string;
@@ -15,6 +16,7 @@ interface VocabularyBoxProps {
   onSelectAll?: (words: BasketWord[]) => void;
   onDeselectAll?: (wordIds: string[]) => void;
   isWordSelected: (id: string) => boolean;
+  onAddToVocabulary?: (words: BasketWord[]) => void;
 }
 
 export function VocabularyBox({
@@ -23,7 +25,9 @@ export function VocabularyBox({
   onSelectAll,
   onDeselectAll,
   isWordSelected,
+  onAddToVocabulary,
 }: VocabularyBoxProps) {
+  const [showAddMenu, setShowAddMenu] = useState(false);
   const buildBasketWord = (word: VocabWord, index: number): BasketWord => ({
     id: `extractor-${index}-${word.word}`,
     word: word.word,
@@ -68,6 +72,21 @@ export function VocabularyBox({
     return null;
   }
 
+  const handleAddToVocabulary = () => {
+    if (!onAddToVocabulary) return;
+    const selectedWords = vocabulary
+      .map((word, index) => buildBasketWord(word, index))
+      .filter((word) => isWordSelected(word.id));
+
+    if (selectedWords.length === 0) return;
+
+    onAddToVocabulary(selectedWords);
+  };
+
+  const selectedCount = vocabulary.filter((word, index) =>
+    isWordSelected(buildBasketWord(word, index).id)
+  ).length;
+
   return (
     <div className="bg-white rounded-2xl border border-purple-100 p-4 space-y-4">
       <div className="flex items-center justify-between">
@@ -89,10 +108,20 @@ export function VocabularyBox({
               선택 해제
             </button>
           )}
+          {onAddToVocabulary && selectedCount > 0 && (
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={handleAddToVocabulary}
+              className="flex items-center gap-1 px-3 py-1.5 bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-full text-xs font-semibold shadow-sm"
+            >
+              <Plus className="w-3 h-3" />
+              단어장 추가 ({selectedCount})
+            </motion.button>
+          )}
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-2 max-h-[400px] overflow-y-auto">
+      <div className="grid grid-cols-2 gap-2 max-h-[400px] overflow-y-auto">
         {vocabulary.map((word, index) => {
           const basketWord = buildBasketWord(word, index);
           const selected = isWordSelected(basketWord.id);
@@ -108,27 +137,21 @@ export function VocabularyBox({
                   : 'bg-gray-50 border-gray-200 hover:border-purple-200'
               }`}
             >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center ${
-                    selected
-                      ? 'bg-purple-600 border-purple-600'
-                      : 'border-gray-300'
-                  }`}>
-                    {selected && (
-                      <Check className="w-3 h-3 text-white" />
-                    )}
-                  </div>
-                  <div>
-                    <span className="font-semibold text-[#491B6D]">{word.word}</span>
-                    <span className="ml-2 text-xs text-gray-500">{word.pos}</span>
-                  </div>
+              <div className="flex items-start gap-2">
+                <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 mt-0.5 ${
+                  selected
+                    ? 'bg-purple-600 border-purple-600'
+                    : 'border-gray-300'
+                }`}>
+                  {selected && (
+                    <Check className="w-2.5 h-2.5 text-white" />
+                  )}
                 </div>
-                <span className={`px-2 py-0.5 text-xs rounded-full border ${getLevelColor(word.level)}`}>
-                  {word.level}
-                </span>
+                <div className="flex-1 min-w-0">
+                  <div className="font-semibold text-[#491B6D] text-sm break-words">{word.word}</div>
+                  <p className="text-xs text-gray-600 mt-0.5 break-words">{word.meaning}</p>
+                </div>
               </div>
-              <p className="mt-1 text-sm text-gray-600 ml-8">{word.meaning}</p>
             </motion.div>
           );
         })}

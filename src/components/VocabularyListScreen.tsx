@@ -188,37 +188,44 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
     }))
   };
 
-  // Create shared vocabulary units with unit ranges (e.g., "토익 고득점 필수 어휘 1~100")
+  // Group shared vocabularies by category
   const createSharedVocabUnits = (): SharedVocabularyUnit[] => {
-    return mySharedVocabularies.map((vocab: any) => {
-      const wordsPerUnit = vocab.words_per_unit || 100;
-      const totalWords = vocab.total_words || 0;
-      const numUnits = Math.ceil(totalWords / wordsPerUnit);
+    console.log('🔍 Creating shared vocab units from:', mySharedVocabularies);
+    console.log('📊 Current sharedVocabExpanded state:', sharedVocabExpanded);
 
-      const unitItems = [];
-      for (let i = 0; i < numUnits; i++) {
-        const startIndex = i * wordsPerUnit + 1;
-        const endIndex = Math.min((i + 1) * wordsPerUnit, totalWords);
-        const actualWordCount = endIndex - startIndex + 1;
+    // Group vocabularies by category
+    const categoryGroups: { [key: string]: any[] } = {};
 
-        unitItems.push({
-          id: `${vocab.id}-unit-${i + 1}`,
-          title: `${vocab.title} ${startIndex}~${endIndex}`,
-          wordCount: actualWordCount,
-          startIndex,
-          endIndex
-        });
+    mySharedVocabularies.forEach((vocab: any) => {
+      const category = vocab.category || 'Uncategorized';
+      console.log(`📦 Vocab "${vocab.title}" -> category: "${category}"`);
+      if (!categoryGroups[category]) {
+        categoryGroups[category] = [];
       }
+      categoryGroups[category].push(vocab);
+    });
+
+    console.log('📊 Category groups:', categoryGroups);
+
+    // Convert to units format
+    return Object.entries(categoryGroups).map(([category, vocabs]) => {
+      const totalWords = vocabs.reduce((sum, v) => sum + (v.total_words || 0), 0);
 
       return {
-        id: `shared-${vocab.id}`,
-        title: vocab.title,
-        subtitle: `${totalWords}개 단어 · ${numUnits}개 유닛`,
+        id: `category-${category}`,
+        title: category,
+        subtitle: `${totalWords}개 단어 · ${vocabs.length}개 단어장`,
         progress: 0,
-        units: unitItems,
-        isExpanded: sharedVocabExpanded[vocab.id] || false,
-        vocabularyId: vocab.id,
-        wordsPerUnit,
+        units: vocabs.map((vocab: any) => ({
+          id: vocab.id,
+          title: vocab.title,
+          wordCount: vocab.total_words || 0,
+          startIndex: 1,
+          endIndex: vocab.total_words || 0
+        })),
+        isExpanded: sharedVocabExpanded[category] || false,
+        vocabularyId: category,
+        wordsPerUnit: 0,
         totalWords
       };
     });
@@ -230,16 +237,22 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
   const allUnits = [myOwnUnit];
 
   const toggleUnit = (unitId: string) => {
+    console.log('🔄 Toggling unit:', unitId);
     if (unitId === 'my-own') {
       // Toggle My Own unit
       setMyOwnExpanded(!myOwnExpanded);
-    } else if (unitId.startsWith('shared-')) {
-      // Toggle shared vocabulary unit
-      const vocabId = unitId.replace('shared-', '');
-      setSharedVocabExpanded(prev => ({
-        ...prev,
-        [vocabId]: !prev[vocabId]
-      }));
+    } else if (unitId.startsWith('category-')) {
+      // Toggle shared vocabulary category
+      const categoryName = unitId.replace('category-', '');
+      console.log('📂 Toggling category:', categoryName);
+      setSharedVocabExpanded(prev => {
+        const newState = {
+          ...prev,
+          [categoryName]: !prev[categoryName]
+        };
+        console.log('📊 New expanded state:', newState);
+        return newState;
+      });
     }
   };
 
@@ -409,7 +422,7 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
       </div>
 
       {/* Vocabulary Units List */}
-      <div className="flex-1 overflow-y-auto px-4 pb-8" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 overflow-y-auto px-4 pb-24" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         {isLoading ? (
           <div className="flex items-center justify-center h-full">
             <div className="text-center">
@@ -593,16 +606,16 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                   {/* Shared Vocabulary Header */}
                   <motion.div
                     whileTap={{ scale: 0.98 }}
-                    onClick={() => toggleUnit(sharedUnit.id)}
-                    className="p-4"
+                    onClick={() => {
+                      console.log('🖱️ CLICK detected on category:', sharedUnit.id, 'isExpanded:', sharedUnit.isExpanded);
+                      toggleUnit(sharedUnit.id);
+                    }}
+                    className="p-4 cursor-pointer"
                   >
                     <div className="flex items-center justify-between">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
                           <span className="text-lg">🎁</span>
-                          <span className="text-xs bg-[#8B5CF6] text-white px-2 py-0.5 rounded-full font-medium">
-                            선물 단어장
-                          </span>
                           <h3 className="text-[#5B21B6]" style={{ fontSize: '16px', fontWeight: 600 }}>
                             {sharedUnit.title}
                           </h3>
@@ -613,13 +626,6 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                       </div>
 
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <button
-                          onClick={(e) => handleDeleteShared(sharedUnit.vocabularyId, sharedUnit.title, e)}
-                          className="p-1.5 hover:bg-red-100 rounded-lg transition-colors"
-                          title="삭제"
-                        >
-                          <Trash2 className="w-4 h-4 text-red-500" />
-                        </button>
                         <span className="text-[#7C3AED]" style={{ fontSize: '12px', fontWeight: 600 }}>
                           {sharedUnit.progress}%
                         </span>
@@ -662,7 +668,7 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: itemIndex * 0.05 }}
                             whileTap={{ scale: 0.98 }}
-                            onClick={() => onSelectVocabulary(sharedUnit.vocabularyId, unitItem.title, itemIndex + 1)}
+                            onClick={() => onSelectVocabulary(unitItem.id, unitItem.title)}
                             className="bg-white/90 backdrop-blur-sm rounded-xl p-3 flex items-center gap-2.5"
                           >
                             <div className="w-7 h-7 bg-gradient-to-br from-[#A78BFA] to-[#7C3AED] rounded-lg flex items-center justify-center flex-shrink-0">
@@ -680,18 +686,25 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
                               </span>
                             </div>
 
-                            <div className="flex-shrink-0">
+                            <div className="flex-shrink-0 flex items-center gap-1">
                               <button
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   if (onStartFlashcards) {
-                                    onStartFlashcards(sharedUnit.vocabularyId, unitItem.title, itemIndex + 1);
+                                    onStartFlashcards(unitItem.id, unitItem.title);
                                   }
                                 }}
                                 className="p-1.5 hover:bg-purple-100 rounded-lg transition-colors"
                                 title="플래시카드 시작"
                               >
                                 <PlayCircle className="w-5 h-5 text-[#7C3AED]" />
+                              </button>
+                              <button
+                                onClick={(e) => handleDeleteShared(unitItem.id, unitItem.title, e)}
+                                className="p-1.5 hover:bg-red-100 rounded-lg transition-colors"
+                                title="삭제"
+                              >
+                                <Trash2 className="w-4 h-4 text-red-500" />
                               </button>
                             </div>
                           </motion.div>

@@ -5,6 +5,7 @@ import { toast } from 'sonner@2.0.3';
 import { BasketWord } from '../../hooks/useWordBasket';
 import { getSupabaseClient } from '../../utils/supabase/client';
 import { projectId } from '../../utils/supabase/info';
+import { generateVocabularyBatch } from '../../utils/vocabularyGenerator';
 
 const supabase = getSupabaseClient();
 
@@ -17,6 +18,8 @@ interface WordBasketModalProps {
   onRemoveWord: (wordId: string) => void;
   onClear: () => void;
   onActionComplete?: () => void;
+  currentVocabularyId?: string;
+  currentVocabularyTitle?: string;
 }
 
 const createVocabularyId = () => {
@@ -25,12 +28,6 @@ const createVocabularyId = () => {
   }
   return `vocab_${Date.now()}_${Math.random().toString(36).slice(2)}`;
 };
-
-const parseTags = (value: string) =>
-  value
-    .split(/[,#]/)
-    .map((tag) => tag.trim())
-    .filter(Boolean);
 
 const normalizeWordsForApi = (words: BasketWord[]) => {
   return words.map((word) => ({
@@ -69,15 +66,16 @@ export function WordBasketModal({
   onRemoveWord,
   onClear,
   onActionComplete,
+  currentVocabularyId,
+  currentVocabularyTitle,
 }: WordBasketModalProps) {
   const [mode, setMode] = useState<Mode>('new');
   const [newTitle, setNewTitle] = useState('');
-  const [newTags, setNewTags] = useState('');
-  const [memo, setMemo] = useState('');
   const [existingVocabularies, setExistingVocabularies] = useState<Array<{ id: string; title: string; total_words?: number }>>([]);
   const [selectedVocabularyId, setSelectedVocabularyId] = useState('');
   const [isLoadingVocabularies, setIsLoadingVocabularies] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
 
   const selectedCount = words.length;
 
@@ -121,10 +119,16 @@ export function WordBasketModal({
   useEffect(() => {
     if (open) {
       setMode('new');
-      setSelectedVocabularyId('');
+      // If current vocabulary exists, pre-select it and switch to existing mode
+      if (currentVocabularyId) {
+        setMode('existing');
+        setSelectedVocabularyId(currentVocabularyId);
+      } else {
+        setSelectedVocabularyId('');
+      }
       fetchExistingVocabularies();
     }
-  }, [open]);
+  }, [open, currentVocabularyId]);
 
   const modalTitle = useMemo(
     () =>
@@ -133,6 +137,37 @@ export function WordBasketModal({
         : '기존 단어장에 추가',
     [mode]
   );
+
+  // Combine current vocabulary with existing vocabularies
+  const allVocabularies = useMemo(() => {
+    const vocabs = [...existingVocabularies];
+
+    // Add current vocabulary if it exists and is not already in the list
+    if (currentVocabularyId && currentVocabularyTitle) {
+      const exists = vocabs.some(v => v.id === currentVocabularyId);
+      if (!exists) {
+        vocabs.unshift({
+          id: currentVocabularyId,
+          title: `${currentVocabularyTitle} (현재 단어장)`,
+          total_words: undefined
+        });
+      } else {
+        // Mark the existing vocabulary as current
+        const index = vocabs.findIndex(v => v.id === currentVocabularyId);
+        if (index !== -1) {
+          vocabs[index] = {
+            ...vocabs[index],
+            title: `${vocabs[index].title} (현재 단어장)`
+          };
+          // Move to front
+          const [current] = vocabs.splice(index, 1);
+          vocabs.unshift(current);
+        }
+      }
+    }
+
+    return vocabs;
+  }, [existingVocabularies, currentVocabularyId, currentVocabularyTitle]);
 
   const handleCreateNew = async () => {
     if (selectedCount === 0) {
@@ -146,10 +181,25 @@ export function WordBasketModal({
 
     try {
       setIsSubmitting(true);
-      toast.loading('새 단어장을 저장하고 있어요...', { id: 'word-basket-action' });
+      toast.loading('단어 데이터를 생성하고 있어요...', { id: 'word-basket-action' });
       const token = await getSessionToken();
-      const payloadWords = normalizeWordsForApi(words);
-      const tags = parseTags(newTags);
+
+      // Step 1: Generate complete word data using Gemini API (with batching)
+      const generatedWords = await generateVocabularyBatch(
+        words.map(w => ({ word: w.word })),
+        token,
+        {
+          onProgress: (progress) => setBatchProgress(progress),
+          onBatchUpdate: (message) => toast.loading(message, { id: 'word-basket-action' })
+        }
+      );
+
+      if (generatedWords.length === 0) {
+        throw new Error('생성된 단어가 없습니다.');
+      }
+
+      // Step 2: Save vocabulary with generated words
+      toast.loading('새 단어장을 저장하고 있어요...', { id: 'word-basket-action' });
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/save-vocabulary`,
         {
@@ -163,9 +213,7 @@ export function WordBasketModal({
             title: newTitle.trim(),
             category: 'My Own',
             level: 'Custom',
-            words: payloadWords,
-            description: memo.trim() || undefined,
-            tags,
+            words: generatedWords,
           }),
         }
       );
@@ -184,6 +232,7 @@ export function WordBasketModal({
       toast.error(error?.message || '단어장을 생성하지 못했습니다.', { id: 'word-basket-action' });
     } finally {
       setIsSubmitting(false);
+      setBatchProgress(null);
     }
   };
 
@@ -199,9 +248,25 @@ export function WordBasketModal({
 
     try {
       setIsSubmitting(true);
-      toast.loading('선택한 단어를 추가하는 중...', { id: 'word-basket-action' });
+      toast.loading('단어 데이터를 생성하고 있어요...', { id: 'word-basket-action' });
       const token = await getSessionToken();
-      const payloadWords = normalizeWordsForApi(words);
+
+      // Step 1: Generate complete word data using Gemini API (with batching)
+      const generatedWords = await generateVocabularyBatch(
+        words.map(w => ({ word: w.word })),
+        token,
+        {
+          onProgress: (progress) => setBatchProgress(progress),
+          onBatchUpdate: (message) => toast.loading(message, { id: 'word-basket-action' })
+        }
+      );
+
+      if (generatedWords.length === 0) {
+        throw new Error('생성된 단어가 없습니다.');
+      }
+
+      // Step 2: Add generated words to existing vocabulary
+      toast.loading('선택한 단어를 추가하는 중...', { id: 'word-basket-action' });
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/server/add-words-to-vocabulary`,
         {
@@ -212,7 +277,7 @@ export function WordBasketModal({
           },
           body: JSON.stringify({
             vocabularyId: selectedVocabularyId,
-            words: payloadWords,
+            words: generatedWords,
           }),
         }
       );
@@ -231,6 +296,7 @@ export function WordBasketModal({
       toast.error(error?.message || '단어를 추가하지 못했습니다.', { id: 'word-basket-action' });
     } finally {
       setIsSubmitting(false);
+      setBatchProgress(null);
     }
   };
 
@@ -241,13 +307,13 @@ export function WordBasketModal({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-end sm:items-center justify-center px-4 py-6"
+          className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4 py-6"
         >
           <motion.div
             initial={{ y: 40, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 40, opacity: 0 }}
-            className="w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden"
+            className="w-full max-w-2xl max-h-[90vh] bg-white rounded-3xl shadow-2xl border border-gray-100 overflow-hidden flex flex-col"
           >
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100 bg-gradient-to-r from-[#F5F3FF] to-white">
               <div>
@@ -264,7 +330,7 @@ export function WordBasketModal({
               </button>
             </div>
 
-            <div className="p-6 space-y-6 max-h-[80vh] overflow-y-auto">
+            <div className="p-6 space-y-6 overflow-y-auto flex-1">
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setMode('new')}
@@ -292,38 +358,16 @@ export function WordBasketModal({
 
               <div className="space-y-4">
                 {mode === 'new' ? (
-                  <>
-                    <div>
-                      <label className="text-sm text-gray-500 mb-1 block">단어장 이름</label>
-                      <input
-                        type="text"
-                        value={newTitle}
-                        onChange={(e) => setNewTitle(e.target.value)}
-                        placeholder="예: 2025-11-17 편입 모의고사"
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-gray-500 mb-1 block">태그 (쉼표 또는 #으로 구분)</label>
-                      <input
-                        type="text"
-                        value={newTags}
-                        onChange={(e) => setNewTags(e.target.value)}
-                        placeholder="#파생어, #동반의어"
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD]"
-                      />
-                    </div>
-                    <div>
-                      <label className="text-sm text-gray-500 mb-1 block">메모</label>
-                      <textarea
-                        value={memo}
-                        onChange={(e) => setMemo(e.target.value)}
-                        rows={3}
-                        placeholder="만든 이유, 참고 메모 등을 남겨보세요."
-                        className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD] resize-none"
-                      />
-                    </div>
-                  </>
+                  <div>
+                    <label className="text-sm text-gray-500 mb-1 block">단어장 이름</label>
+                    <input
+                      type="text"
+                      value={newTitle}
+                      onChange={(e) => setNewTitle(e.target.value)}
+                      placeholder="예: 2025-11-17 편입 모의고사"
+                      className="w-full rounded-2xl border border-gray-200 px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD]"
+                    />
+                  </div>
                 ) : (
                   <div>
                     <label className="text-sm text-gray-500 mb-2 block">추가할 단어장 선택</label>
@@ -334,9 +378,9 @@ export function WordBasketModal({
                         className="w-full appearance-none rounded-2xl border border-gray-200 px-4 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD]"
                       >
                         <option value="">단어장을 선택해주세요</option>
-                        {existingVocabularies.map((vocab) => (
+                        {allVocabularies.map((vocab) => (
                           <option key={vocab.id} value={vocab.id}>
-                            {vocab.title} ({vocab.total_words || 0}단어)
+                            {vocab.title}{vocab.total_words !== undefined ? ` (${vocab.total_words}단어)` : ''}
                           </option>
                         ))}
                       </select>
@@ -345,7 +389,7 @@ export function WordBasketModal({
                     {isLoadingVocabularies && (
                       <p className="text-sm text-gray-500 mt-2">단어장을 불러오는 중...</p>
                     )}
-                    {!isLoadingVocabularies && existingVocabularies.length === 0 && (
+                    {!isLoadingVocabularies && allVocabularies.length === 0 && (
                       <p className="text-sm text-gray-500 mt-2">사용 중인 단어장이 없습니다.</p>
                     )}
                   </div>

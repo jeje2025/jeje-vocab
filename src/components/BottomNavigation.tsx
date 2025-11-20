@@ -16,27 +16,28 @@ function NavigationIcon({ src, active, IconComponent, isEmoji, emojiText }: { sr
       </div>
     );
   }
-  
+
   if (IconComponent) {
     return (
       <div className="relative w-6 h-6 flex items-center justify-center">
-        <IconComponent 
+        <IconComponent
           className={`w-5 h-5 transition-all duration-300 ${
-            active ? 'text-purple-600' : 'text-white'
+            active ? 'text-[#8B5CF6]' : 'text-white'
           }`}
           strokeWidth={2}
         />
       </div>
     );
   }
-  
+
   return (
     <div className="relative w-6 h-6 flex items-center justify-center">
-      <img 
+      <img
         className={`w-full h-full object-contain transition-all duration-300 ${
-          active ? 'brightness-0' : 'brightness-0 invert'
-        }`} 
-        src={src} 
+          active ? 'brightness-0 saturate-100' : 'brightness-0 invert'
+        }`}
+        style={active ? { filter: 'invert(40%) sepia(89%) saturate(2476%) hue-rotate(242deg) brightness(96%) contrast(92%)' } : {}}
+        src={src}
         alt=""
       />
     </div>
@@ -63,7 +64,8 @@ export function BottomNavigation({ currentScreen, onScreenChange }: BottomNaviga
       case 'home': return 0;
       case 'gift': return 1;
       case 'vocabulary-creator': return 2;
-      case 'ai': return 3;
+      case 'ai':
+      case 'ai-tutor': return 3;
       case 'text-extractor': return 4;
       default: return 0;
     }

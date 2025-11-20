@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Send, Bot, User, Sparkles, Shuffle, Link2, Lightbulb, Smile } from 'lucide-react';
+import { Send, Bot, User, Sparkles, Shuffle, Link2, Lightbulb, Smile, RotateCcw } from 'lucide-react';
 import { projectId, publicAnonKey } from '../utils/supabase/info';
 import { BackButton } from './BackButton';
 import { renderMessageText } from './common/markdown';
+import { toast } from 'sonner@2.0.3';
 
 interface AITutorScreenProps {
   onBack: () => void;
@@ -44,24 +45,104 @@ const tutorFeatures = [
   }
 ];
 
-export function AITutorScreen({ onBack }: AITutorScreenProps) {
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: '1',
-      text: "안녕하세요! 💜 저는 JEJEVOCA AI 튜터입니다. 영어 단어 학습과 편입 준비를 돕기 위해 여기 있어요. 위 기능 중 하나를 선택하시거나, 자유롭게 질문해주세요!",
-      isUser: false,
-      timestamp: new Date()
+const MAX_GEMINI_RETRIES = 3;
+const RETRY_DELAY_MS = 1500;
+
+const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const sanitizeAIResponse = (text: string): string => {
+  if (!text) return '';
+
+  const cleaned = text
+    .replace(/\r/g, '')
+    .replace(/\t/g, ' ')
+    .replace(/--([^-\n]+)--/g, '$1')
+    .replace(/#{1,3}\s*/g, '')
+    .replace(/---+/g, '')
+    .replace(/[*▫️•]/g, '-')
+    .trim();
+
+  if (!cleaned) return '';
+
+  const seen = new Set<string>();
+  const chunks: string[] = [];
+  let pendingBlank = false;
+
+  const normalizedSpacing = cleaned.replace(/[ ]{2,}/g, ' ');
+
+  for (const rawLine of normalizedSpacing.split('\n')) {
+    const trimmedLine = rawLine.trim();
+
+    if (!trimmedLine) {
+      if (!pendingBlank && chunks.length > 0) {
+        pendingBlank = true;
+      }
+      continue;
     }
-  ]);
+
+    if (pendingBlank) {
+      chunks.push('');
+      pendingBlank = false;
+    }
+
+    const key = trimmedLine.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    chunks.push(trimmedLine);
+  }
+
+  const collapsed = chunks.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\n{2,}/g, '\n\n').trim();
+  return collapsed;
+};
+
+export function AITutorScreen({ onBack }: AITutorScreenProps) {
+  const [messages, setMessages] = useState<Message[]>(() => {
+    // Restore messages from localStorage on mount
+    const saved = localStorage.getItem('aiTutorMessages');
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      // Convert timestamp strings back to Date objects
+      return parsed.map((msg: any) => ({
+        ...msg,
+        timestamp: new Date(msg.timestamp)
+      }));
+    }
+    return [
+      {
+        id: '1',
+        text: "안녕하세요! 💜 저는 JEJEVOCA AI 튜터입니다. 영어 단어 학습과 편입 준비를 돕기 위해 여기 있어요. 위 기능 중 하나를 선택하시거나, 자유롭게 질문해주세요!",
+        isUser: false,
+        timestamp: new Date()
+      }
+    ];
+  });
   const [inputValue, setInputValue] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const [showWordInput, setShowWordInput] = useState(false);
   const [selectedFeature, setSelectedFeature] = useState<typeof tutorFeatures[0] | null>(null);
 
-  // Scroll to top when component mounts
+  // Save messages to localStorage whenever they change
   useEffect(() => {
-    window.scrollTo(0, 0);
+    localStorage.setItem('aiTutorMessages', JSON.stringify(messages));
+  }, [messages]);
+
+  // Check for context from Passage Extractor
+  useEffect(() => {
+    const context = sessionStorage.getItem('tutorContext');
+    const initialQuestion = sessionStorage.getItem('tutorInitialQuestion');
+
+    if (context && initialQuestion) {
+      // Clear the stored values
+      sessionStorage.removeItem('tutorContext');
+      sessionStorage.removeItem('tutorInitialQuestion');
+
+      // Auto-send the question with context
+      setTimeout(() => {
+        setInputValue(initialQuestion);
+        handleSendMessage(context);
+      }, 500);
+    }
   }, []);
 
   const scrollToBottom = () => {
@@ -73,48 +154,63 @@ export function AITutorScreen({ onBack }: AITutorScreenProps) {
   }, [messages, isTyping]);
 
   const callGeminiAPI = async (prompt: string): Promise<string> => {
-    try {
-      // 대화 히스토리를 Gemini API 형식으로 변환
-      const history = messages
-        .filter(msg => !msg.isLoading) // 로딩 메시지 제외
-        .map(msg => ({
-          role: msg.isUser ? 'user' : 'model',
-          parts: [{ text: msg.text }]
-        }));
+    const history = messages
+      .filter(msg => !msg.isLoading) // 로딩 메시지 제외
+      .map(msg => ({
+        role: msg.isUser ? 'user' : 'model',
+        parts: [{ text: msg.text }]
+      }));
 
-      // 현재 사용자 메시지 추가
-      const conversationHistory = [
-        ...history,
-        { role: 'user', parts: [{ text: prompt }] }
-      ];
+    const conversationHistory = [
+      ...history,
+      { role: 'user', parts: [{ text: prompt }] }
+    ];
 
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/ai-chat`,
-        {
+    const endpoint = `https://${projectId}.supabase.co/functions/v1/server/ai-chat`;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= MAX_GEMINI_RETRIES; attempt++) {
+      try {
+        const response = await fetch(endpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${publicAnonKey}`
           },
-          body: JSON.stringify({ 
-            conversationHistory 
-          })
+          body: JSON.stringify({ conversationHistory })
+        });
+
+        const responseText = await response.text();
+        let data: any = {};
+        try {
+          data = responseText ? JSON.parse(responseText) : {};
+        } catch (parseError) {
+          console.warn('API response is not JSON, falling back to text:', responseText, parseError);
+          data = { message: responseText };
         }
-      );
 
-      const data = await response.json();
-      
-      if (!response.ok) {
-        console.error('API Error Response:', data);
-        throw new Error(data.error || 'API request failed');
+        if (!response.ok) {
+          console.error('API Error Response:', data);
+          throw new Error(data.error || data.message || response.statusText || 'API request failed');
+        }
+
+        const rawResponse = data.message || data.response || responseText || '';
+        const sanitizedResponse = sanitizeAIResponse(rawResponse);
+        console.log('API Success Response:', data);
+        return sanitizedResponse || rawResponse || '죄송합니다. 응답을 생성하는 중 오류가 발생했습니다.';
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+        console.warn(`Gemini request failed (attempt ${attempt}/${MAX_GEMINI_RETRIES}):`, lastError);
+        if (attempt < MAX_GEMINI_RETRIES) {
+          await delay(RETRY_DELAY_MS);
+          continue;
+        }
+        console.error('Gemini API Error:', lastError);
+        return '죄송합니다. 응답을 생성하는 중 오류가 발생했습니다. 다시 시도해주세요. 에러: ' + lastError.message;
       }
-
-      console.log('API Success Response:', data);
-      return data.message || data.response || '죄송합니다. 응답을 생성하는 중 오류가 발생했습니다.';
-    } catch (error) {
-      console.error('Gemini API Error:', error);
-      return '죄송합니다. 응답을 생성하는 중 오류가 발생했습니다. 다시 시도해주세요. 에러: ' + (error instanceof Error ? error.message : String(error));
     }
+
+    return '죄송합니다. 응답을 생성하는 중 오류가 발생했습니다. 다시 시도해주세요.';
   };
 
   const handleFeatureClick = (feature: typeof tutorFeatures[0]) => {
@@ -157,19 +253,35 @@ export function AITutorScreen({ onBack }: AITutorScreenProps) {
     setSelectedFeature(null);
   };
 
-  const handleSendMessage = async () => {
-    if (!inputValue.trim()) return;
+  const handleClearMessages = () => {
+    // Reset to initial message only
+    const initialMessage: Message = {
+      id: '1',
+      text: "안녕하세요! 💜 저는 JEJEVOCA AI 튜터입니다. 영어 단어 학습과 편입 준비를 돕기 위해 여기 있어요. 위 기능 중 하나를 선택하시거나, 자유롭게 질문해주세요!",
+      isUser: false,
+      timestamp: new Date()
+    };
+    setMessages([initialMessage]);
+    localStorage.setItem('aiTutorMessages', JSON.stringify([initialMessage]));
+    toast.info('대화 내용을 비웠습니다.');
+  };
+
+  const handleSendMessage = async (contextOverride?: string) => {
+    const messageText = contextOverride || inputValue;
+    if (!messageText.trim()) return;
 
     const userMessage: Message = {
       id: Date.now().toString(),
-      text: inputValue,
+      text: contextOverride ? inputValue : messageText,
       isUser: true,
       timestamp: new Date()
     };
 
     setMessages(prev => [...prev, userMessage]);
-    const userInput = inputValue;
-    setInputValue('');
+    const userInput = contextOverride || inputValue;
+    if (!contextOverride) {
+      setInputValue('');
+    }
 
     sendToGemini(userInput);
   };
@@ -243,15 +355,22 @@ export function AITutorScreen({ onBack }: AITutorScreenProps) {
       <div className="relative overflow-hidden" style={{ background: 'transparent' }}>
         <div className="flex items-center justify-between p-6 backdrop-blur-xl border-b border-white/20">
           <BackButton onClick={onBack} />
-          
+
           <div className="text-center">
             <h1 className="text-lg" style={{ fontWeight: 700, color: '#091A7A' }}>
               JEJEVOCA AI 튜터
             </h1>
             <p className="text-xs" style={{ color: '#6B7280' }}>온라인 • 도움 준비 완료</p>
           </div>
-          
-          <div className="w-11" />
+
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleClearMessages}
+            className="w-11 h-11 bg-white/90 backdrop-blur-sm rounded-full flex items-center justify-center shadow-lg border border-white/40"
+            style={{ minWidth: '44px', minHeight: '44px' }}
+          >
+            <RotateCcw className="w-5 h-5 text-[#491B6D]" />
+          </motion.button>
         </div>
       </div>
 
@@ -450,7 +569,7 @@ export function AITutorScreen({ onBack }: AITutorScreenProps) {
               onChange={(e) => setInputValue(e.target.value)}
               onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && handleSendMessage()}
               placeholder="자유롭게 질문하세요..."
-              className="w-full p-4 pr-12 bg-white border-2 rounded-2xl focus:outline-none focus:ring-2 transition-all duration-200"
+              className="w-full p-4 pr-12 bg-white border-2 rounded-2xl focus:outline-none focus:ring-2 transition-all duration-200 text-sm"
               style={{
                 borderColor: '#C4B5FD',
                 color: '#491B6D'

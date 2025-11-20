@@ -9,6 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { toast } from 'sonner@2.0.3';
 import { projectId } from '../utils/supabase/info';
 import { getSupabaseClient } from '../utils/supabase/client';
+import { invalidateVocabularyListCache } from './VocabularyListScreen';
 
 interface VocabularyCreatorScreenProps {
   onBack: () => void;
@@ -264,6 +265,10 @@ export function VocabularyCreatorScreen({ onBack, onSaveComplete, getAuthToken, 
       });
       setWordInput('');
       setVocabularyName(getDefaultVocabularyName());
+
+      // Invalidate cache so the new vocabulary shows up in the list
+      invalidateVocabularyListCache();
+
       toast.success('단어장이 생성되어 내가 만든 단어장에 저장되었어요! 🎉', { id: 'user-vocab-progress' });
 
       if (onSaveComplete && saveData.vocabulary?.id) {
@@ -343,6 +348,10 @@ export function VocabularyCreatorScreen({ onBack, onSaveComplete, getAuthToken, 
       });
       setWordInput('');
       setSelectedExistingVocabId('');
+
+      // Invalidate cache so the updated vocabulary word count shows up in the list
+      invalidateVocabularyListCache();
+
       toast.success(`${selectedVocab?.title || '단어장'}에 ${generatedItems.length}개 단어가 추가되었어요! 🎉`, { id: 'user-vocab-progress' });
 
       if (onSaveComplete && selectedExistingVocabId) {
@@ -495,19 +504,19 @@ export function VocabularyCreatorScreen({ onBack, onSaveComplete, getAuthToken, 
             />
             <div className="flex gap-3">
               <Button
+                onClick={handleGenerateAndSave}
+                className="flex-1 bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] hover:from-[#7C3AED] hover:to-[#6D28D9] text-white"
+                disabled={isProcessing}
+              >
+                {isProcessing ? '생성 중...' : '생성하기'}
+              </Button>
+              <Button
                 variant="outline"
                 onClick={() => setShowNewVocabModal(false)}
                 className="flex-1"
                 disabled={isProcessing}
               >
                 취소
-              </Button>
-              <Button
-                onClick={handleGenerateAndSave}
-                className="flex-1"
-                disabled={isProcessing}
-              >
-                {isProcessing ? '생성 중...' : '생성하기'}
               </Button>
             </div>
           </motion.div>

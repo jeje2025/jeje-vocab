@@ -59,6 +59,9 @@ interface GameMapQuizScreenProps {
   graveyardWordIds?: string[];
   wrongAnswersWordIds?: string[];
   getAuthToken?: () => string;
+  onRefreshVocabulary?: () => Promise<void>;
+  vocabularyId?: string;
+  isLoading?: boolean;
 }
 
 export interface Stage {
@@ -1233,7 +1236,10 @@ export function GameMapQuizScreen({
   starredWordIds = [],
   graveyardWordIds = [],
   wrongAnswersWordIds = [],
-  getAuthToken
+  getAuthToken,
+  onRefreshVocabulary,
+  vocabularyId,
+  isLoading
 }: GameMapQuizScreenProps) {
   // Get subject-specific stages and questions
   const subjectId = selectedSubject?.id || 'math';
@@ -1632,7 +1638,7 @@ export function GameMapQuizScreen({
 
   const handleSubmitAnswer = (overrideAnswers?: number[]) => {
     if (!currentStage) return;
-    
+
     const questions =
       shuffledQuestions[currentStage] ||
       questionBank[currentStage] ||
@@ -1986,6 +1992,8 @@ export function GameMapQuizScreen({
                 starredWordIds={starredWordIds}
                 graveyardWordIds={graveyardWordIds}
                 wrongAnswersWordIds={wrongAnswersWordIds}
+                isLoading={isLoading}
+                vocabularyId={vocabularyId}
                 onAddToStarred={onAddToStarred}
                 onMoveToGraveyard={onMoveToGraveyard}
                 onDeletePermanently={onDeletePermanently}
@@ -1993,6 +2001,7 @@ export function GameMapQuizScreen({
                   console.log('[GameMapQuizScreen] 💜 Flashcard button clicked in WordList! Setting activeTab to flashcards');
                   setActiveTab('flashcards');
                 }}
+                onRefreshVocabulary={onRefreshVocabulary}
                 hideHeader={true}
               />
             </motion.div>
@@ -2285,8 +2294,11 @@ export function GameMapQuizScreen({
                 vocabularyWords={vocabularyWords}
                 starredWordIds={starredWordIds}
                 graveyardWordIds={graveyardWordIds}
+                vocabularyId={vocabularyId}
+                vocabularyTitle={selectedSubject?.name}
                 onAddToStarred={onAddToStarred}
                 onMoveToGraveyard={onMoveToGraveyard}
+                onRefreshVocabulary={onRefreshVocabulary}
                 hideHeader={true}
               />
             </motion.div>

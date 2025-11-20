@@ -1,8 +1,11 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence, PanInfo } from 'motion/react';
-import { Volume2, Star, Skull, Play, Pause, Square, Shuffle } from 'lucide-react';
+import { Volume2, Star, Skull, Play, Pause, Square, Shuffle, ShoppingCart } from 'lucide-react';
 import { BackButton } from './BackButton';
 import { HomeButton } from './HomeButton';
+import { useWordBasket } from '../hooks/useWordBasket';
+import { toast } from 'sonner@2.0.3';
+import { WordBasketModal } from './selection/WordBasketModal';
 
 interface Flashcard {
   id: string;
@@ -26,6 +29,9 @@ interface FlashcardScreenProps {
   starredWordIds?: string[];
   graveyardWordIds?: string[];
   hideHeader?: boolean; // 탭 내에서 사용 시 헤더 숨기기
+  vocabularyId?: string; // 현재 단어장 ID
+  vocabularyTitle?: string; // 현재 단어장 제목
+  onRefreshVocabulary?: () => Promise<void>; // 단어장 새로고침 함수
 }
 
 const sampleCards: Flashcard[] = [
@@ -84,7 +90,7 @@ const sampleCards: Flashcard[] = [
   }
 ];
 
-export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddToStarred, onMoveToGraveyard, starredWordIds = [], graveyardWordIds = [], hideHeader = false }: FlashcardScreenProps) {
+export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddToStarred, onMoveToGraveyard, starredWordIds = [], graveyardWordIds = [], hideHeader = false, vocabularyId, vocabularyTitle, onRefreshVocabulary }: FlashcardScreenProps) {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [isFlipped, setIsFlipped] = useState(false);
   const [direction, setDirection] = useState(0);
@@ -92,40 +98,50 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
   const [isExiting, setIsExiting] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const [exampleLanguage, setExampleLanguage] = useState<'en' | 'kr'>('en'); // EN/KR 토글 상태
+  const [showBasketModal, setShowBasketModal] = useState(false);
+
+  // Word basket
+  const {
+    toggleWord: toggleBasketWord,
+    isSelected: isBasketSelected,
+    selectedWords: basketWords,
+    clear: clearBasket,
+    removeWord: removeBasketWord
+  } = useWordBasket();
   
   // Convert vocabularyWords to Flashcard format
   const convertedCards = vocabularyWords && vocabularyWords.length > 0
     ? vocabularyWords.map((word: any) => ({
-        id: word.id || '',
-        word: word.word || '',
-        pronunciation: word.pronunciation || '',
-        meaning: word.meaning || '',
-        example: word.example_sentence || word.example || '',
-        translation: word.translation || '', // 한글 번역
-        etymology: word.etymology || '',
-        derivatives: Array.isArray(word.derivatives)
-          ? word.derivatives.map((d: any) => ({ word: d.word || d, meaning: d.meaning || '' }))
-          : typeof word.derivatives === 'string' && word.derivatives
-          ? word.derivatives.split(',').map((d: string) => {
-              const trimmed = d.trim();
-              const match = trimmed.match(/^(.+?)\s*\((.+?)\)\s*$/);
-              if (match) {
-                return { word: match[1].trim(), meaning: match[2].trim() };
-              }
-              return { word: trimmed, meaning: '' };
-            })
-          : [],
-        synonyms: Array.isArray(word.synonyms)
-          ? word.synonyms.map((s: any) => ({ word: s.word || s, meaning: s.meaning || '' }))
-          : typeof word.synonyms === 'string' && word.synonyms
-          ? word.synonyms.split(',').map((s: string) => ({ word: s.trim(), meaning: '' }))
-          : [],
-        antonyms: Array.isArray(word.antonyms)
-          ? word.antonyms.map((a: any) => ({ word: a.word || a, meaning: a.meaning || '' }))
-          : typeof word.antonyms === 'string' && word.antonyms
-          ? word.antonyms.split(',').map((a: string) => ({ word: a.trim(), meaning: '' }))
-          : []
-      }))
+          id: word.id || '',
+          word: word.word || '',
+          pronunciation: word.pronunciation || '',
+          meaning: word.meaning || '',
+          example: word.example_sentence || word.example || '',
+          translation: word.translation || '', // 한글 번역
+          etymology: word.etymology || '',
+          derivatives: Array.isArray(word.derivatives)
+            ? word.derivatives.map((d: any) => ({ word: d.word || d, meaning: d.meaning || '' }))
+            : typeof word.derivatives === 'string' && word.derivatives
+            ? word.derivatives.split(',').map((d: string) => {
+                const trimmed = d.trim();
+                const match = trimmed.match(/^(.+?)\s*\((.+?)\)\s*$/);
+                if (match) {
+                  return { word: match[1].trim(), meaning: match[2].trim() };
+                }
+                return { word: trimmed, meaning: '' };
+              })
+            : [],
+          synonyms: Array.isArray(word.synonyms)
+            ? word.synonyms.map((s: any) => ({ word: s.word || s, meaning: s.meaning || '' }))
+            : typeof word.synonyms === 'string' && word.synonyms
+            ? word.synonyms.split(',').map((s: string) => ({ word: s.trim(), meaning: '' }))
+            : [],
+          antonyms: Array.isArray(word.antonyms)
+            ? word.antonyms.map((a: any) => ({ word: a.word || a, meaning: a.meaning || '' }))
+            : typeof word.antonyms === 'string' && word.antonyms
+            ? word.antonyms.split(',').map((a: string) => ({ word: a.trim(), meaning: '' }))
+            : []
+        }))
     : sampleCards;
 
   const [cards, setCards] = useState<Flashcard[]>(convertedCards);
@@ -134,36 +150,36 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
   useEffect(() => {
     if (vocabularyWords && vocabularyWords.length > 0) {
       const newCards = vocabularyWords.map((word: any) => ({
-        id: word.id || '',
-        word: word.word || '',
-        pronunciation: word.pronunciation || '',
-        meaning: word.meaning || '',
-        example: word.example_sentence || word.example || '',
-        translation: word.translation || '', // 한글 번역
-        etymology: word.etymology || '',
-        derivatives: Array.isArray(word.derivatives)
-          ? word.derivatives.map((d: any) => ({ word: d.word || d, meaning: d.meaning || '' }))
-          : typeof word.derivatives === 'string' && word.derivatives
-          ? word.derivatives.split(',').map((d: string) => {
-              const trimmed = d.trim();
-              const match = trimmed.match(/^(.+?)\s*\((.+?)\)\s*$/);
-              if (match) {
-                return { word: match[1].trim(), meaning: match[2].trim() };
-              }
-              return { word: trimmed, meaning: '' };
-            })
-          : [],
-        synonyms: Array.isArray(word.synonyms)
-          ? word.synonyms.map((s: any) => ({ word: s.word || s, meaning: s.meaning || '' }))
-          : typeof word.synonyms === 'string' && word.synonyms
-          ? word.synonyms.split(',').map((s: string) => ({ word: s.trim(), meaning: '' }))
-          : [],
-        antonyms: Array.isArray(word.antonyms)
-          ? word.antonyms.map((a: any) => ({ word: a.word || a, meaning: a.meaning || '' }))
-          : typeof word.antonyms === 'string' && word.antonyms
-          ? word.antonyms.split(',').map((a: string) => ({ word: a.trim(), meaning: '' }))
-          : []
-      }));
+          id: word.id || '',
+          word: word.word || '',
+          pronunciation: word.pronunciation || '',
+          meaning: word.meaning || '',
+          example: word.example_sentence || word.example || '',
+          translation: word.translation || '', // 한글 번역
+          etymology: word.etymology || '',
+          derivatives: Array.isArray(word.derivatives)
+            ? word.derivatives.map((d: any) => ({ word: d.word || d, meaning: d.meaning || '' }))
+            : typeof word.derivatives === 'string' && word.derivatives
+            ? word.derivatives.split(',').map((d: string) => {
+                const trimmed = d.trim();
+                const match = trimmed.match(/^(.+?)\s*\((.+?)\)\s*$/);
+                if (match) {
+                  return { word: match[1].trim(), meaning: match[2].trim() };
+                }
+                return { word: trimmed, meaning: '' };
+              })
+            : [],
+          synonyms: Array.isArray(word.synonyms)
+            ? word.synonyms.map((s: any) => ({ word: s.word || s, meaning: s.meaning || '' }))
+            : typeof word.synonyms === 'string' && word.synonyms
+            ? word.synonyms.split(',').map((s: string) => ({ word: s.trim(), meaning: '' }))
+            : [],
+          antonyms: Array.isArray(word.antonyms)
+            ? word.antonyms.map((a: any) => ({ word: a.word || a, meaning: a.meaning || '' }))
+            : typeof word.antonyms === 'string' && word.antonyms
+            ? word.antonyms.split(',').map((a: string) => ({ word: a.trim(), meaning: '' }))
+            : []
+        }));
       setCards(newCards);
       setCurrentIndex(0);
       setIsFlipped(false);
@@ -172,8 +188,36 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
   const currentCard = cards[currentIndex];
   const isStarred = starredWordIds.includes(currentCard?.id || '');
+  const isInBasket = isBasketSelected(currentCard?.id || '');
   const autoPlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const isSpeakingRef = useRef(false);
+
+  // Handle basket toggle - open modal
+  const handleBasketToggle = () => {
+    if (basketWords.length === 0) {
+      toast.info('장바구니가 비어있어요');
+      return;
+    }
+    setShowBasketModal(true);
+  };
+
+  // Handle adding related word to basket
+  const handleRelatedWordToggle = (e: React.MouseEvent, word: string, meaning: string, type: 'derivative' | 'synonym' | 'antonym') => {
+    e.stopPropagation(); // Prevent card flip
+
+    const relatedWordId = `${currentCard?.id}_${type}_${word}`;
+    const isAlreadyInBasket = isBasketSelected(relatedWordId);
+
+    toggleBasketWord({
+      id: relatedWordId,
+      word: word,
+      meaning: meaning,
+      source: `플래시카드 (${type === 'derivative' ? '파생어' : type === 'synonym' ? '동의어' : '반의어'})`,
+      metadata: {},
+    });
+
+    toast.success(isAlreadyInBasket ? '장바구니에서 제거했어요' : '장바구니에 추가했어요');
+  };
 
   // 예문에서 단어 하이라이트 함수
   const highlightWord = (text: string, targetWord: string) => {
@@ -483,7 +527,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
       {/* Flashcard Container */}
       <div className={`flex-1 flex justify-center ${hideHeader ? 'items-center' : 'items-start pt-2'}`} style={{ overflow: 'visible', maxWidth: '100vw', touchAction: 'auto' }}>
-        <div className={`w-full max-w-[380px] ${hideHeader ? 'h-[60vh]' : 'h-full max-h-[70vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
+        <div className={`w-full max-w-[380px] ${hideHeader ? 'h-[50vh]' : 'h-full max-h-[50vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
           {/* Previous Card (Left) */}
           {currentIndex > 0 && (
             <motion.div 
@@ -678,7 +722,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                     <Skull className="w-6 h-6 text-[#6B7280]" />
                   </motion.button>
 
-                  <div className="flex flex-col gap-3 scrollable-content">
+                  <div className="flex flex-col gap-3 scrollable-content" style={{ touchAction: 'pan-y', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     {/* Word Title (Small) */}
                     <div className="text-center pb-3 border-b border-gray-200">
                       <h3 className="text-[#491B6D]" style={{ fontSize: '24px', fontWeight: 700 }}>
@@ -731,7 +775,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                     {/* Etymology - WordListScreen 스타일 */}
                     {currentCard.etymology && (
                       <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] p-[10px]">
-                        <p className="text-[#4B5563]" style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.6 }}>
+                        <p className="text-[#4B5563]" style={{ fontSize: '11.5px', fontWeight: 500, lineHeight: 1.6 }}>
                           {currentCard.etymology}
                         </p>
                       </div>
@@ -743,14 +787,29 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                       {currentCard.derivatives && currentCard.derivatives.length > 0 && (
                         <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
                           <div className="flex flex-wrap gap-x-2 gap-y-1">
-                            {currentCard.derivatives.map((der, idx) => (
-                              <span key={idx} className="inline-flex items-baseline gap-1">
-                                <span className="text-[11px] font-semibold text-gray-700">{der.word}</span>
-                                {der.meaning && (
-                                  <span className="text-[10px] text-gray-500">({der.meaning})</span>
-                                )}
-                              </span>
-                            ))}
+                            {currentCard.derivatives.map((der, idx) => {
+                              const derivativeId = `${currentCard.id}_derivative_${der.word}`;
+                              const isSelected = isBasketSelected(derivativeId);
+                              return (
+                                <motion.button
+                                  key={idx}
+                                  whileTap={{ scale: 0.95 }}
+                                  onClick={(e) => handleRelatedWordToggle(e, der.word, der.meaning || '', 'derivative')}
+                                  className={`inline-flex items-baseline gap-1 px-2 py-1 rounded-lg transition-colors ${
+                                    isSelected
+                                      ? 'bg-[#7C3AED]/10 border border-[#7C3AED]'
+                                      : 'hover:bg-gray-100 border border-transparent'
+                                  }`}
+                                >
+                                  <span className={`text-[11px] font-semibold ${isSelected ? 'text-[#7C3AED]' : 'text-gray-700'}`}>
+                                    {der.word}
+                                  </span>
+                                  {der.meaning && (
+                                    <span className="text-[10px] text-gray-500">({der.meaning})</span>
+                                  )}
+                                </motion.button>
+                              );
+                            })}
                           </div>
                         </div>
                       )}
@@ -761,15 +820,33 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           {/* Synonyms */}
                           {currentCard.synonyms && currentCard.synonyms.length > 0 && (
                             <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
+                              <p className="text-[#6B7280] mb-1" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
+                                동의어
+                              </p>
                               <div className="flex flex-wrap gap-x-2 gap-y-1">
-                                {currentCard.synonyms.map((syn, idx) => (
-                                  <span key={idx} className="inline-flex items-baseline gap-1">
-                                    <span className="text-[11px] font-semibold text-gray-700">{syn.word}</span>
-                                    {syn.meaning && (
-                                      <span className="text-[10px] text-gray-500">({syn.meaning})</span>
-                                    )}
-                                  </span>
-                                ))}
+                                {currentCard.synonyms.map((syn, idx) => {
+                                  const synonymId = `${currentCard.id}_synonym_${syn.word}`;
+                                  const isSelected = isBasketSelected(synonymId);
+                                  return (
+                                    <motion.button
+                                      key={idx}
+                                      whileTap={{ scale: 0.95 }}
+                                      onClick={(e) => handleRelatedWordToggle(e, syn.word, syn.meaning || '', 'synonym')}
+                                      className={`inline-flex items-baseline gap-1 px-2 py-1 rounded-lg transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#7C3AED]/10 border border-[#7C3AED]'
+                                          : 'hover:bg-gray-100 border border-transparent'
+                                      }`}
+                                    >
+                                      <span className={`text-[11px] font-semibold ${isSelected ? 'text-[#7C3AED]' : 'text-gray-700'}`}>
+                                        {syn.word}
+                                      </span>
+                                      {syn.meaning && (
+                                        <span className="text-[10px] text-gray-500">({syn.meaning})</span>
+                                      )}
+                                    </motion.button>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -777,15 +854,33 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           {/* Antonyms */}
                           {currentCard.antonyms && currentCard.antonyms.length > 0 && (
                             <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
+                              <p className="text-[#6B7280] mb-1" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
+                                반의어
+                              </p>
                               <div className="flex flex-wrap gap-x-2 gap-y-1">
-                                {currentCard.antonyms.map((ant, idx) => (
-                                  <span key={idx} className="inline-flex items-baseline gap-1">
-                                    <span className="text-[11px] font-semibold text-gray-700">{ant.word}</span>
-                                    {ant.meaning && (
-                                      <span className="text-[10px] text-gray-500">({ant.meaning})</span>
-                                    )}
-                                  </span>
-                                ))}
+                                {currentCard.antonyms.map((ant, idx) => {
+                                  const antonymId = `${currentCard.id}_antonym_${ant.word}`;
+                                  const isSelected = isBasketSelected(antonymId);
+                                  return (
+                                    <motion.button
+                                      key={idx}
+                                      whileTap={{ scale: 0.95 }}
+                                      onClick={(e) => handleRelatedWordToggle(e, ant.word, ant.meaning || '', 'antonym')}
+                                      className={`inline-flex items-baseline gap-1 px-2 py-1 rounded-lg transition-colors ${
+                                        isSelected
+                                          ? 'bg-[#7C3AED]/10 border border-[#7C3AED]'
+                                          : 'hover:bg-gray-100 border border-transparent'
+                                      }`}
+                                    >
+                                      <span className={`text-[11px] font-semibold ${isSelected ? 'text-[#7C3AED]' : 'text-gray-700'}`}>
+                                        {ant.word}
+                                      </span>
+                                      {ant.meaning && (
+                                        <span className="text-[10px] text-gray-500">({ant.meaning})</span>
+                                      )}
+                                    </motion.button>
+                                  );
+                                })}
                               </div>
                             </div>
                           )}
@@ -848,7 +943,43 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
         >
           <Square className="w-5 h-5 text-[#EF4444] fill-[#EF4444]" />
         </motion.button>
+
+        {/* Shopping Cart Button */}
+        <motion.button
+          whileTap={{ scale: 0.9 }}
+          onClick={handleBasketToggle}
+          className="w-14 h-14 bg-white/95 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl relative"
+        >
+          <ShoppingCart className="w-6 h-6 text-[#6B7280]" />
+          {basketWords.length > 0 && (
+            <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#7C3AED] rounded-full flex items-center justify-center">
+              <span className="text-white text-xs font-bold">{basketWords.length}</span>
+            </div>
+          )}
+        </motion.button>
       </div>
+
+      {/* Word Basket Modal */}
+      <WordBasketModal
+        open={showBasketModal}
+        onClose={() => setShowBasketModal(false)}
+        words={basketWords}
+        onRemoveWord={removeBasketWord}
+        onClear={clearBasket}
+        onActionComplete={async () => {
+          console.log('[FlashcardScreen] onActionComplete called');
+          setShowBasketModal(false);
+          if (onRefreshVocabulary) {
+            console.log('[FlashcardScreen] Calling onRefreshVocabulary...');
+            await onRefreshVocabulary();
+            console.log('[FlashcardScreen] onRefreshVocabulary completed');
+          } else {
+            console.warn('[FlashcardScreen] onRefreshVocabulary is not defined!');
+          }
+        }}
+        currentVocabularyId={vocabularyId}
+        currentVocabularyTitle={vocabularyTitle}
+      />
     </div>
   );
 }

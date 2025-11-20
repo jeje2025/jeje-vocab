@@ -258,7 +258,7 @@ export function NormalQuizLayout({
             className="pt-1"
           >
             <button
-              onClick={onSubmitAnswer}
+              onClick={() => onSubmitAnswer()}
               disabled={!selectedAnswers.length}
               className={`w-full py-3 rounded-2xl font-semibold shadow-card border transition-all duration-300 ${
                 selectedAnswers.length

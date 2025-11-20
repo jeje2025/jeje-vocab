@@ -104,6 +104,7 @@ export function LoginScreen({ onLoginComplete, onGoToSignup }: LoginScreenProps)
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'kakao',
         options: {
+          redirectTo: window.location.origin,
           queryParams: {
             // Only request profile info, no email
             scope: 'profile_nickname profile_image',
@@ -129,6 +130,9 @@ export function LoginScreen({ onLoginComplete, onGoToSignup }: LoginScreenProps)
       const supabase = getSupabaseClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
+        options: {
+          redirectTo: window.location.origin,
+        },
       });
 
       if (error) {

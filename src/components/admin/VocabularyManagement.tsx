@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Trash2, RefreshCw, Edit, Check, X } from 'lucide-react';
+import { Trash2, RefreshCw, Edit, Check, X, CheckSquare, Square } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { projectId } from '../../utils/supabase/info';
 
@@ -31,6 +31,9 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
   const [editingVocabId, setEditingVocabId] = useState<string | null>(null);
   const [editingCategory, setEditingCategory] = useState<string>('');
+  const [selectedVocabs, setSelectedVocabs] = useState<Set<string>>(new Set());
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc' | 'none'>('none');
+  const [regeneratedVocabs, setRegeneratedVocabs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     loadCategories();
@@ -105,7 +108,7 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
   };
 
   const handleRegenerateExamples = async (vocabId: string, vocabTitle: string) => {
-    if (!confirm(`"${vocabTitle}" 단어장의 예문을 재생성하시겠습니까?\n\n이 작업은 시간이 걸릴 수 있으며, AI 비용이 발생합니다.`)) return;
+    if (!confirm(`"${vocabTitle}" 단어장의 뜻과 예문을 AI로 재생성하시겠습니까?\n\n이 작업은 시간이 걸릴 수 있으며, AI 비용이 발생합니다.`)) return;
 
     const token = getAuthToken();
     if (!token) {
@@ -113,7 +116,7 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
       return;
     }
 
-    const loadingToast = toast.loading('예문 재생성 중...');
+    const loadingToast = toast.loading('뜻과 예문 AI 재생성 중...');
 
     try {
       const response = await fetch(
@@ -131,106 +134,21 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || '예문 재생성 실패');
+        throw new Error(data.error || 'AI 재생성 실패');
       }
 
-      toast.success(`예문 재생성 완료!\n성공: ${data.processedCount}개, 실패: ${data.errorCount}개`, {
+      toast.success(`AI 재생성 완료!\n성공: ${data.processedCount}개, 실패: ${data.errorCount}개`, {
         id: loadingToast,
         duration: 5000,
       });
+
+      // Mark this vocabulary as regenerated
+      setRegeneratedVocabs(prev => new Set(prev).add(vocabId));
 
       await loadVocabularies();
     } catch (error: any) {
       console.error('Error regenerating examples:', error);
-      toast.error(`예문 재생성 실패: ${error.message}`, {
-        id: loadingToast,
-      });
-    }
-  };
-
-  const handleMigrateChapters = async () => {
-    if (!confirm('단어장들을 챕터/강별로 마이그레이션하시겠습니까?\n\n처리 대상:\n- 301 chapter X → 정병권T 카테고리\n- 어휘끝 블랙 X강 → 어휘끝 블랙 카테고리\n\n다운로드 시 챕터/강별 유닛 구분')) return;
-
-    const token = getAuthToken();
-    if (!token) {
-      toast.error('인증이 필요합니다.');
-      return;
-    }
-
-    const loadingToast = toast.loading('챕터 마이그레이션 중...');
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/admin/migrate-chapters`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || '마이그레이션 실패');
-      }
-
-      toast.success(`마이그레이션 완료!\n${data.processedVocabs}개 단어장, ${data.processedWords}개 단어 처리`, {
-        id: loadingToast,
-        duration: 5000,
-      });
-
-      await loadCategories();
-      await loadVocabularies();
-    } catch (error: any) {
-      console.error('Error migrating chapters:', error);
-      toast.error(`마이그레이션 실패: ${error.message}`, {
-        id: loadingToast,
-      });
-    }
-  };
-
-  const handleAutoMerge = async () => {
-    if (!confirm('챕터별 단어장들을 자동으로 합치시겠습니까?\n\n처리 내용:\n- 정병권T 단어장들 → "정병권 301" 하나로 통합\n- 어휘끝 블랙 단어장들 → "어휘끝 블랙" 하나로 통합\n\n각 챕터/강은 유닛으로 유지됩니다.')) return;
-
-    const token = getAuthToken();
-    if (!token) {
-      toast.error('인증이 필요합니다.');
-      return;
-    }
-
-    const loadingToast = toast.loading('단어장 자동 통합 중...');
-
-    try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/admin/auto-merge-chapters`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || '자동 통합 실패');
-      }
-
-      toast.success(`자동 통합 완료!\n${data.message}`, {
-        id: loadingToast,
-        duration: 5000,
-      });
-
-      await loadCategories();
-      await loadVocabularies();
-    } catch (error: any) {
-      console.error('Error auto-merging:', error);
-      toast.error(`자동 통합 실패: ${error.message}`, {
+      toast.error(`AI 재생성 실패: ${error.message}`, {
         id: loadingToast,
       });
     }
@@ -277,9 +195,78 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
     }
   };
 
+  const toggleSelectVocab = (vocabId: string) => {
+    setSelectedVocabs(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(vocabId)) {
+        newSet.delete(vocabId);
+      } else {
+        newSet.add(vocabId);
+      }
+      return newSet;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedVocabs.size === filteredVocabularies.length) {
+      setSelectedVocabs(new Set());
+    } else {
+      setSelectedVocabs(new Set(filteredVocabularies.map(v => v.id)));
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (selectedVocabs.size === 0) {
+      toast.error('삭제할 단어장을 선택해주세요.');
+      return;
+    }
+
+    if (!confirm(`선택한 ${selectedVocabs.size}개의 단어장을 삭제하시겠습니까?`)) return;
+
+    const token = getAuthToken();
+    if (!token) return;
+
+    const loadingToast = toast.loading('단어장 삭제 중...');
+
+    try {
+      const deletePromises = Array.from(selectedVocabs).map(vocabId =>
+        fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies/${vocabId}`,
+          {
+            method: 'DELETE',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        )
+      );
+
+      await Promise.all(deletePromises);
+
+      toast.success(`${selectedVocabs.size}개의 단어장이 삭제되었습니다.`, {
+        id: loadingToast,
+      });
+
+      setSelectedVocabs(new Set());
+      await loadVocabularies();
+    } catch (error) {
+      console.error('Error deleting vocabularies:', error);
+      toast.error('일부 단어장 삭제에 실패했습니다.', {
+        id: loadingToast,
+      });
+    }
+  };
+
   const filteredVocabularies = selectedCategory === 'all'
     ? vocabularies
     : vocabularies.filter(v => v.category === selectedCategory);
+
+  const sortedVocabularies = [...filteredVocabularies].sort((a, b) => {
+    if (sortOrder === 'none') return 0;
+
+    const comparison = a.title.localeCompare(b.title, 'ko-KR');
+    return sortOrder === 'asc' ? comparison : -comparison;
+  });
 
   return (
     <div className="p-8">
@@ -292,22 +279,36 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
           <p className="text-gray-600">Manage all shared vocabulary lists</p>
         </div>
 
-        {/* Actions and Filter */}
+        {/* Filter and Bulk Actions */}
         <div className="flex items-center gap-4">
-          <button
-            onClick={handleMigrateChapters}
-            className="px-4 py-2 bg-purple-500 text-white rounded-lg hover:bg-purple-600 transition-colors text-sm"
-            style={{ fontWeight: 600 }}
+          {selectedVocabs.size > 0 && (
+            <motion.button
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={handleBulkDelete}
+              className="flex items-center gap-2 px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+              style={{ fontWeight: 600 }}
+            >
+              <Trash2 className="w-4 h-4" />
+              선택 삭제 ({selectedVocabs.size})
+            </motion.button>
+          )}
+
+          <label className="text-sm text-gray-600" style={{ fontWeight: 600 }}>
+            정렬:
+          </label>
+          <select
+            value={sortOrder}
+            onChange={(e) => setSortOrder(e.target.value as 'asc' | 'desc' | 'none')}
+            className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
           >
-            챕터 마이그레이션
-          </button>
-          <button
-            onClick={handleAutoMerge}
-            className="px-4 py-2 bg-blue-500 text-white rounded-lg hover:bg-blue-600 transition-colors text-sm"
-            style={{ fontWeight: 600 }}
-          >
-            자동 통합
-          </button>
+            <option value="none">정렬 안함</option>
+            <option value="asc">가나다순 (↑)</option>
+            <option value="desc">가나다 역순 (↓)</option>
+          </select>
+
           <label className="text-sm text-gray-600" style={{ fontWeight: 600 }}>
             필터:
           </label>
@@ -330,7 +331,7 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
       <div className="bg-white rounded-2xl shadow-sm border border-gray-200 overflow-hidden">
         {loading ? (
           <div className="p-12 text-center text-gray-500">Loading...</div>
-        ) : filteredVocabularies.length === 0 ? (
+        ) : sortedVocabularies.length === 0 ? (
           <div className="p-12 text-center text-gray-500">
             {selectedCategory === 'all'
               ? '단어장이 없습니다. "Create Vocabulary" 탭에서 새 단어장을 만들어주세요.'
@@ -340,6 +341,19 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
+                <th className="px-6 py-4 text-left text-xs text-gray-600 uppercase tracking-wider" style={{ fontWeight: 600 }}>
+                  <button
+                    onClick={toggleSelectAll}
+                    className="flex items-center gap-2 hover:text-purple-600 transition-colors"
+                  >
+                    {selectedVocabs.size === sortedVocabularies.length && sortedVocabularies.length > 0 ? (
+                      <CheckSquare className="w-5 h-5" />
+                    ) : (
+                      <Square className="w-5 h-5" />
+                    )}
+                    <span>Select All</span>
+                  </button>
+                </th>
                 <th className="px-6 py-4 text-left text-xs text-gray-600 uppercase tracking-wider" style={{ fontWeight: 600 }}>
                   Title
                 </th>
@@ -361,8 +375,20 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {filteredVocabularies.map((vocab) => (
+              {sortedVocabularies.map((vocab) => (
                 <tr key={vocab.id} className="hover:bg-gray-50 transition-colors">
+                  <td className="px-6 py-4">
+                    <button
+                      onClick={() => toggleSelectVocab(vocab.id)}
+                      className="flex items-center justify-center hover:text-purple-600 transition-colors"
+                    >
+                      {selectedVocabs.has(vocab.id) ? (
+                        <CheckSquare className="w-5 h-5 text-purple-600" />
+                      ) : (
+                        <Square className="w-5 h-5" />
+                      )}
+                    </button>
+                  </td>
                   <td className="px-6 py-4">
                     <div className="text-sm text-gray-900" style={{ fontWeight: 600 }}>
                       {vocab.title}
@@ -423,10 +449,27 @@ export function VocabularyManagement({ getAuthToken }: VocabularyManagementProps
                       <motion.button
                         whileTap={{ scale: 0.95 }}
                         onClick={() => handleRegenerateExamples(vocab.id, vocab.title)}
-                        className="p-2 hover:bg-purple-50 rounded-lg transition-colors"
-                        title="예문 재생성"
+                        className={`p-2 rounded-lg transition-colors relative ${
+                          regeneratedVocabs.has(vocab.id)
+                            ? 'bg-green-50 hover:bg-green-100'
+                            : 'hover:bg-purple-50'
+                        }`}
+                        title={
+                          regeneratedVocabs.has(vocab.id)
+                            ? 'AI 재생성 완료 (이번 세션)'
+                            : 'AI 재생성 (뜻 + 예문)'
+                        }
                       >
-                        <RefreshCw className="w-4 h-4 text-purple-500" />
+                        <RefreshCw
+                          className={`w-4 h-4 ${
+                            regeneratedVocabs.has(vocab.id)
+                              ? 'text-green-600'
+                              : 'text-purple-500'
+                          }`}
+                        />
+                        {regeneratedVocabs.has(vocab.id) && (
+                          <div className="absolute -top-1 -right-1 w-2 h-2 bg-green-500 rounded-full" />
+                        )}
                       </motion.button>
                       <motion.button
                         whileTap={{ scale: 0.95 }}

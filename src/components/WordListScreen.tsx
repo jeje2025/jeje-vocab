@@ -16,7 +16,6 @@ import { BackButton } from './BackButton';
 import { MemoryMatchGame } from './games/MemoryMatchGame';
 import { ZombieGameScreen } from './ZombieGame';
 import { useWordBasket, BasketWord } from '../hooks/useWordBasket';
-import { WordBasketBar } from './selection/WordBasketBar';
 import { WordBasketModal } from './selection/WordBasketModal';
 
 const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
@@ -53,6 +52,8 @@ interface WordListScreenProps {
   hideHeader?: boolean; // 헤더 숨기기
   hideActionButtons?: boolean; // 액션 버튼 숨기기
   unitNumber?: number; // 유닛 번호
+  vocabularyId?: string; // 현재 단어장 ID
+  onRefreshVocabulary?: () => Promise<void>; // 단어장 새로고침 함수
 }
 
 interface WordData {
@@ -76,7 +77,7 @@ interface WordData {
   graveyardAt?: string; // 무덤 이동 시간
 }
 
-function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitName, vocabularyWords, onAddToStarred, onMoveToGraveyard, onDeletePermanently, onStartFlashcards, filterType, starredWordIds = [], graveyardWordIds = [], wrongAnswersWordIds = [], hideHeader = false, hideActionButtons = false, unitNumber }: WordListScreenProps) {
+function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitName, vocabularyWords, onAddToStarred, onMoveToGraveyard, onDeletePermanently, onStartFlashcards, filterType, starredWordIds = [], graveyardWordIds = [], wrongAnswersWordIds = [], hideHeader = false, hideActionButtons = false, unitNumber, vocabularyId, onRefreshVocabulary }: WordListScreenProps) {
   const [showMemoryGame, setShowMemoryGame] = useState(false);
   const [showGhostGame, setShowGhostGame] = useState(false);
   const {
@@ -549,7 +550,6 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
   };
 
   const theme = getTheme();
-  const floatingBasketOffset = basketCount > 0 ? 'bottom-28' : 'bottom-6';
 
   return (
     <div className="h-screen flex flex-col bg-transparent">
@@ -638,6 +638,27 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                   >
                     KR
                   </span>
+                </motion.button>
+
+                {/* Cart Button */}
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleBasketButtonClick}
+                  className={`px-3 py-2 backdrop-blur-lg rounded-xl border shadow-sm flex items-center gap-1.5 whitespace-nowrap ${
+                    basketCount > 0
+                      ? 'bg-[#5B21B6] text-white border-[#5B21B6]'
+                      : 'bg-white/90 text-[#5B21B6] border-white/40'
+                  }`}
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                    장바구니
+                  </span>
+                  {basketCount > 0 && (
+                    <span style={{ fontSize: '10px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
+                      {basketCount}
+                    </span>
+                  )}
                 </motion.button>
               </>
             )}
@@ -790,6 +811,27 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                     KR
                   </span>
                 </motion.button>
+
+                {/* Cart Button */}
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleBasketButtonClick}
+                  className={`px-3 py-2 backdrop-blur-lg rounded-xl border shadow-sm flex items-center gap-1.5 whitespace-nowrap ${
+                    basketCount > 0
+                      ? 'bg-[#5B21B6] text-white border-[#5B21B6]'
+                      : 'bg-white/90 text-[#5B21B6] border-white/40'
+                  }`}
+                >
+                  <ShoppingCart className="w-3.5 h-3.5" />
+                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
+                    장바구니
+                  </span>
+                  {basketCount > 0 && (
+                    <span style={{ fontSize: '10px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
+                      {basketCount}
+                    </span>
+                  )}
+                </motion.button>
               </>
             )}
 
@@ -880,7 +922,7 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
       )}
 
       {/* Word Cards */}
-      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-48" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 pb-64" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
         <div className="space-y-3 pt-4">
           <AnimatePresence mode="popLayout">
             {words.map((word, index) => (
@@ -908,22 +950,29 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.div
                   initial={{ opacity: 0, y: 20 }}
                   animate={{ opacity: 1, y: 0, x: word.swipeX }}
-                  transition={{ delay: index * 0.05 }}
+                  transition={{ delay: Math.min(index * 0.02, 0.3), duration: 0.2 }}
                   drag={filterType !== 'graveyard' ? "x" : false}
                   dragConstraints={{ left: -150, right: 0 }}
                   dragElastic={0}
+                  dragDirectionLock
+                  onDirectionLock={(axis) => {
+                    // If user is scrolling vertically, don't allow horizontal drag
+                    if (axis === 'y') {
+                      return;
+                    }
+                  }}
                   onDragEnd={(e, info) => {
                     if (filterType !== 'graveyard' && info.offset.x < -100) {
                       handleSwipeToGraveyard(word.id);
                     } else {
-                      setWords(words.map(w => 
+                      setWords(words.map(w =>
                         w.id === word.id ? { ...w, swipeX: 0 } : w
                       ));
                     }
                   }}
                   onDrag={(e, info) => {
                     if (filterType !== 'graveyard') {
-                      setWords(words.map(w => 
+                      setWords(words.map(w =>
                         w.id === word.id ? { ...w, swipeX: Math.min(0, info.offset.x) } : w
                       ));
                     }
@@ -1250,44 +1299,25 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
 
       </div>
 
-      <motion.button
-        whileTap={{ scale: 0.96 }}
-        onClick={handleBasketButtonClick}
-        className={`fixed ${floatingBasketOffset} right-4 z-40 flex items-center gap-2 rounded-full border shadow-lg px-4 py-2 ${
-          basketCount > 0
-            ? 'bg-[#5B21B6] text-white border-[#5B21B6]'
-            : 'bg-white/95 text-[#5B21B6] border-white/60'
-        }`}
-      >
-        <ShoppingCart className="w-4 h-4" />
-        <span className="text-sm font-semibold">장바구니</span>
-        {basketCount > 0 && (
-          <span className="text-xs font-bold bg-white/20 px-2 py-0.5 rounded-full">
-            {basketCount}
-          </span>
-        )}
-      </motion.button>
-
-      <WordBasketBar
-        count={basketCount}
-        onReview={() => setShowBasketModal(true)}
-        onClear={() => {
-          if (basketCount > 0) {
-            clearBasket();
-            toast.info('장바구니를 비웠어요.');
-          }
-        }}
-      />
       <WordBasketModal
         open={showBasketModal}
         onClose={() => setShowBasketModal(false)}
         words={basketWords}
         onRemoveWord={removeBasketWord}
-        onClear={() => {
-          clearBasket();
-          toast.info('선택한 단어를 모두 해제했어요.');
+        onClear={clearBasket}
+        onActionComplete={async () => {
+          console.log('[WordListScreen] onActionComplete called');
+          setShowBasketModal(false);
+          if (onRefreshVocabulary) {
+            console.log('[WordListScreen] Calling onRefreshVocabulary...');
+            await onRefreshVocabulary();
+            console.log('[WordListScreen] onRefreshVocabulary completed');
+          } else {
+            console.warn('[WordListScreen] onRefreshVocabulary is not defined!');
+          }
         }}
-        onActionComplete={() => setShowBasketModal(false)}
+        currentVocabularyId={vocabularyId}
+        currentVocabularyTitle={vocabularyTitle}
       />
 
       {/* Memory Match Game Modal */}

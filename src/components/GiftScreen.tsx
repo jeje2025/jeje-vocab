@@ -24,10 +24,19 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categories, setCategories] = useState<string[]>(['All']);
+  const [selectedVocabs, setSelectedVocabs] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchCategories();
     fetchSharedVocabularies();
+  }, []);
+
+  useEffect(() => {
+    const targets = [document.documentElement, document.body];
+    targets.forEach((el) => el?.classList.add('gift-fullscreen'));
+    return () => {
+      targets.forEach((el) => el?.classList.remove('gift-fullscreen'));
+    };
   }, []);
 
   const fetchCategories = async () => {
@@ -121,133 +130,187 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
     }
   };
 
-  const filteredVocabularies = vocabularies.filter(vocab =>
-    (vocab.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) &&
-    (selectedCategory === 'All' || vocab.category === selectedCategory)
-  );
+  const filteredVocabularies = vocabularies
+    .filter(vocab =>
+      (vocab.title?.toLowerCase() || '').includes(searchQuery.toLowerCase()) &&
+      (selectedCategory === 'All' || vocab.category === selectedCategory)
+    )
+    .sort((a, b) => {
+      // 한글 가나다순 정렬
+      return a.title.localeCompare(b.title, 'ko-KR');
+    });
+
+  const toggleSelection = (vocabId: string) => {
+    setSelectedVocabs(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(vocabId)) {
+        newSet.delete(vocabId);
+      } else {
+        newSet.add(vocabId);
+      }
+      return newSet;
+    });
+  };
+
+  const handleAddSelected = () => {
+    const selectedVocabsList = vocabularies.filter(v => selectedVocabs.has(v.id));
+    selectedVocabsList.forEach(vocab => {
+      onSelectVocabulary(vocab);
+    });
+    setSelectedVocabs(new Set());
+  };
 
   return (
-    <div className="h-full flex flex-col bg-transparent">
-      <StandardHeader
-        onBack={onBack}
-        title="Presets"
-        subtitle="공유된 단어장을 다운로드하세요"
-      />
+    <>
+      <style>{`
+        @keyframes fade-in {
+          from {
+            opacity: 0;
+            transform: translateY(8px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .animate-fade-in {
+          animation: fade-in 0.3s ease-out forwards;
+          opacity: 0;
+        }
+      `}</style>
+      <div className="min-h-screen h-full flex flex-col bg-transparent overflow-hidden">
+        <StandardHeader
+          onBack={onBack}
+          title="Presets"
+          subtitle="공유된 단어장을 다운로드하세요"
+        />
 
-      {/* Sticky Header */}
-      <div className="sticky top-0 z-40 backdrop-blur-lg pb-2" style={{ background: 'transparent' }}>
-        {/* Search Bar */}
-        <div className="flex items-center justify-between px-4 py-3">
-          <div className="flex-1">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#8B5CF6]/50" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search preset vocabulary..."
-                className="w-full pl-12 pr-4 py-3 rounded-full bg-white/80 backdrop-blur-lg shadow-md text-[#491B6D] placeholder:text-[#8B5CF6]/40 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]/30"
-              />
+        <div className="flex-1 flex flex-col overflow-hidden">
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
+            <div className="sticky top-0 z-20 bg-transparent backdrop-blur-xl border-b border-white/20">
+              {/* Search Bar & Add Button */}
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#8B5CF6]/50" />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Search preset vocabulary..."
+                      className="w-full pl-12 pr-4 py-3 rounded-full bg-white/90 shadow-md text-[#491B6D] placeholder:text-[#8B5CF6]/40 focus:outline-none focus:ring-2 focus:ring-[#8B5CF6]/30"
+                    />
+                  </div>
+                </div>
+
+                {/* Add Button */}
+                {selectedVocabs.size > 0 && (
+                  <motion.button
+                    whileTap={{ scale: 0.95 }}
+                    onClick={handleAddSelected}
+                    className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-full px-5 py-3 flex items-center gap-2 shadow-lg whitespace-nowrap"
+                    style={{ fontSize: '14px', fontWeight: 600 }}
+                  >
+                    <Plus className="w-4 h-4" />
+                    추가 ({selectedVocabs.size})
+                  </motion.button>
+                )}
+              </div>
+
+              {/* Category Tabs */}
+              <div
+                className="flex gap-3 px-4 pb-3 overflow-x-auto"
+                style={{
+                  scrollbarWidth: 'none',
+                  msOverflowStyle: 'none',
+                  WebkitOverflowScrolling: 'touch',
+                }}
+              >
+                {categories.map((category) => (
+                  <button
+                    key={category}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setSelectedCategory(category);
+                    }}
+                    className={`px-6 py-2.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 active:scale-95 ${
+                      selectedCategory === category
+                        ? 'bg-[#091A7A] text-white shadow-lg'
+                        : 'bg-transparent text-[#091A7A]'
+                    }`}
+                    style={{
+                      fontSize: '15px',
+                      fontWeight: 600,
+                      touchAction: 'manipulation',
+                      WebkitTapHighlightColor: 'transparent'
+                    }}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="px-4 pb-32">
+              {loading ? (
+                <div className="flex items-center justify-center py-12">
+                  <div className="w-8 h-8 border-4 border-[#8B5CF6]/20 border-t-[#8B5CF6] rounded-full animate-spin" />
+                </div>
+              ) : filteredVocabularies.length === 0 ? (
+                <div className="text-center py-12">
+                  <Gift className="w-16 h-16 text-[#491B6D]/40 mx-auto mb-4" />
+                  <p className="text-[#491B6D]/70">검색 결과가 없습니다</p>
+                </div>
+              ) : (
+                <div className="space-y-3 pt-4">
+                  {filteredVocabularies.map((vocab, index) => (
+                    <div
+                      key={vocab.id}
+                      onClick={() => toggleSelection(vocab.id)}
+                      className="bg-white/95 backdrop-blur-lg rounded-2xl overflow-hidden shadow-md p-4 cursor-pointer active:scale-[0.98] transition-all duration-200 hover:shadow-lg animate-fade-in"
+                      style={{
+                        animationDelay: `${Math.min(index * 30, 300)}ms`
+                      }}
+                    >
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center justify-center flex-shrink-0">
+                          <div className={`w-5 h-5 rounded-lg border-2 flex items-center justify-center transition-all ${
+                            selectedVocabs.has(vocab.id)
+                              ? 'bg-[#8B5CF6] border-[#8B5CF6]'
+                              : 'bg-white border-[#8B5CF6]/30'
+                          }`}>
+                            {selectedVocabs.has(vocab.id) && (
+                              <svg className="w-3 h-3 text-white" fill="none" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 24 24" stroke="currentColor">
+                                <path d="M5 13l4 4L19 7"></path>
+                              </svg>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="w-10 h-10 bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] rounded-xl flex items-center justify-center flex-shrink-0">
+                          <Gift className="w-5 h-5 text-white" />
+                        </div>
+
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2 mb-1">
+                            <h3 className="text-[#491B6D] font-semibold text-sm truncate">
+                              {vocab.title}
+                            </h3>
+                            <span className="text-[#8B5CF6] text-xs font-medium whitespace-nowrap">
+                              {vocab.total_words.toLocaleString()}개
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
-
-        {/* Category Tabs */}
-        <div className="flex gap-3 px-4 overflow-x-auto scrollbar-hide">
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="p-2 flex items-center justify-center"
-          >
-            <ChevronLeft className="w-5 h-5 text-[#491B6D]" />
-          </motion.button>
-          
-          {categories.map((category) => (
-            <motion.button
-              key={category}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setSelectedCategory(category)}
-              className={`px-6 py-2.5 rounded-full whitespace-nowrap transition-all ${
-                selectedCategory === category
-                  ? 'bg-[#091A7A] text-white shadow-lg'
-                  : 'bg-transparent text-[#091A7A]'
-              }`}
-              style={{ fontSize: '15px', fontWeight: 600 }}
-            >
-              {category}
-            </motion.button>
-          ))}
-          
-          <motion.button
-            whileTap={{ scale: 0.95 }}
-            className="p-2 flex items-center justify-center"
-          >
-            <ChevronRight className="w-5 h-5 text-[#491B6D]" />
-          </motion.button>
-        </div>
       </div>
-
-      {/* Content */}
-      <div className="flex-1 overflow-y-auto scrollbar-hide px-4 pb-8">
-        {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <div className="w-8 h-8 border-4 border-[#8B5CF6]/20 border-t-[#8B5CF6] rounded-full animate-spin" />
-          </div>
-        ) : filteredVocabularies.length === 0 ? (
-          <div className="text-center py-12">
-            <Gift className="w-16 h-16 text-[#491B6D]/40 mx-auto mb-4" />
-            <p className="text-[#491B6D]/70">검색 결과가 없습니다</p>
-          </div>
-        ) : (
-          <div className="space-y-4 pt-4">
-            {filteredVocabularies.map((vocab, index) => (
-              <motion.div
-                key={vocab.id}
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: index * 0.1 }}
-                whileTap={{ scale: 0.98 }}
-                onTap={() => onSelectVocabulary(vocab)}
-                className="bg-white/95 backdrop-blur-lg rounded-3xl overflow-hidden shadow-lg p-5 cursor-pointer"
-              >
-                <div className="flex items-start gap-4">
-                  {/* Icon Badge */}
-                  <div className="w-12 h-12 bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] rounded-2xl flex items-center justify-center flex-shrink-0">
-                    <Gift className="w-6 h-6 text-white" />
-                  </div>
-
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3 mb-3">
-                      <div className="flex-1 min-w-0">
-                        <h3 className="text-[#491B6D] mb-1.5" style={{ fontSize: '16px', fontWeight: 600 }}>
-                          {vocab.title}
-                        </h3>
-                        {vocab.description && (
-                          <p className="text-[#491B6D]/60 text-sm line-clamp-2">
-                            {vocab.description}
-                          </p>
-                        )}
-                      </div>
-                      <ChevronRight className="w-5 h-5 text-[#491B6D]/30 flex-shrink-0 mt-0.5" />
-                    </div>
-
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className={`px-3 py-1.5 rounded-full text-xs ${getDifficultyColor(vocab.difficulty_level)}`}>
-                        {getDifficultyLabel(vocab.difficulty_level)}
-                      </span>
-                      <span className="px-3 py-1.5 rounded-full text-xs bg-[#491B6D]/8 text-[#491B6D]/70">
-                        {vocab.category}
-                      </span>
-                      <span className="text-[#491B6D]/50 text-sm ml-auto">
-                        {vocab.total_words.toLocaleString()}개 단어
-                      </span>
-                    </div>
-                  </div>
-                </div>
-              </motion.div>
-            ))}
-          </div>
-        )}
-      </div>
-    </div>
+    </>
   );
 }
