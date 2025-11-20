@@ -665,6 +665,9 @@ export default function App() {
           onMoveToGraveyard={wordLists.moveToGraveyard}
           onDeletePermanently={wordLists.deletePermanently}
           getAuthToken={auth.getAuthToken}
+          onRefreshVocabulary={refreshCurrentVocabulary}
+          vocabularyId={selectedVocabulary?.id}
+          isLoading={isLoadingVocabulary}
         />;
       case 'quiz-completion':
         return <QuizCompletionScreen
