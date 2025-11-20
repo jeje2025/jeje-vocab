@@ -584,18 +584,141 @@ function UploadScreen() {
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-600 mb-2">Category *</label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 border rounded-lg"
-            >
-              <option value="">카테고리 선택</option>
-              {categories.map((cat) => (
-                <option key={cat.id} value={cat.name}>
-                  {cat.icon} {cat.name}
-                </option>
-              ))}
-            </select>
+            {category === '__new__' ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="이모지 (예: 📚)"
+                    value={categories.find(c => c.name === '__temp__')?.icon || ''}
+                    onChange={(e) => {
+                      const icon = e.target.value.slice(0, 2);
+                      setCategories(prev => {
+                        const temp = prev.find(c => c.name === '__temp__');
+                        if (temp) {
+                          return prev.map(c => c.name === '__temp__' ? { ...c, icon } : c);
+                        } else {
+                          return [...prev, { id: '__temp__', name: '__temp__', icon, enabled: true }];
+                        }
+                      });
+                    }}
+                    className="w-20 px-3 py-2 border rounded-lg text-center"
+                    maxLength={2}
+                  />
+                  <input
+                    type="text"
+                    placeholder="카테고리 이름 (예: 기타)"
+                    value={categories.find(c => c.name === '__temp__')?.tempName || ''}
+                    onChange={(e) => {
+                      const tempName = e.target.value;
+                      setCategories(prev => {
+                        const temp = prev.find(c => c.name === '__temp__');
+                        if (temp) {
+                          return prev.map(c => c.name === '__temp__' ? { ...c, tempName } : c);
+                        } else {
+                          return [...prev, { id: '__temp__', name: '__temp__', icon: '📚', tempName, enabled: true }];
+                        }
+                      });
+                    }}
+                    className="flex-1 px-3 py-2 border rounded-lg"
+                  />
+                  <button
+                    onClick={async () => {
+                      const temp = categories.find(c => c.name === '__temp__');
+                      if (!temp?.tempName || !temp?.icon) {
+                        toast.error('이모지와 카테고리 이름을 모두 입력해주세요.');
+                        return;
+                      }
+
+                      const token = getAuthToken();
+                      if (!token) {
+                        toast.error('인증이 필요합니다.');
+                        return;
+                      }
+
+                      try {
+                        const response = await fetch(
+                          `https://${projectId}.supabase.co/functions/v1/server/admin/categories`,
+                          {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                              name: temp.tempName,
+                              icon: temp.icon,
+                            }),
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          console.error('❌ Category creation error response:', data);
+                          throw new Error(data.error || '카테고리 생성 실패');
+                        }
+
+                        console.log('✅ Category created:', data.category);
+                        toast.success('새 카테고리가 생성되었습니다!');
+
+                        // Add the new category to the existing list
+                        const newCategory = {
+                          id: data.category.id,
+                          name: data.category.name,
+                          icon: data.category.icon,
+                          enabled: data.category.enabled,
+                          sort_order: data.category.order
+                        };
+
+                        // Update categories: remove temp, add new category
+                        setCategories(prev => {
+                          const withoutTemp = prev.filter(c => c.name !== '__temp__');
+                          // Check if category already exists
+                          const exists = withoutTemp.find(c => c.name === newCategory.name);
+                          if (exists) return withoutTemp;
+                          return [...withoutTemp, newCategory];
+                        });
+
+                        // Set the newly created category as selected
+                        setCategory(data.category.name);
+
+                        console.log('✅ Category added to list and selected:', data.category.name);
+                      } catch (error) {
+                        console.error('Error creating category:', error);
+                        toast.error('카테고리 생성에 실패했습니다.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    생성
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCategories(prev => prev.filter(c => c.name !== '__temp__'));
+                      setCategory(categories.length > 0 ? categories[0].name : '');
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">카테고리 선택</option>
+                {categories.filter(c => c.name !== '__temp__').map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.icon} {cat.name}
+                  </option>
+                ))}
+                <option value="__new__">➕ 새 카테고리 추가...</option>
+              </select>
+            )}
           </div>
           <div>
             <label className="block text-sm font-semibold text-gray-600 mb-2">Description</label>

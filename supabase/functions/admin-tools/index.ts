@@ -3,7 +3,7 @@ import { cors } from "npm:hono/cors";
 import { logger } from "npm:hono/logger";
 import { createClient } from "jsr:@supabase/supabase-js@2.49.8";
 
-const app = new Hono().basePath('/admin-tools');
+const app = new Hono();
 
 // Enable logger
 app.use('*', logger(console.log));
@@ -443,6 +443,73 @@ NOW GENERATE THE JSON ARRAY:`;
     return c.json({
       error: error?.message || String(error),
       details: error?.stack
+    }, 500);
+  }
+});
+
+// Create new category
+app.post("/create-category", async (c) => {
+  try {
+    const userId = await getUserIdFromAuth(c);
+    if (!userId) {
+      return c.json({ error: 'Unauthorized' }, 401);
+    }
+
+    const isUserAdmin = await isAdmin(userId);
+    if (!isUserAdmin) {
+      return c.json({ error: 'Forbidden - Admin access required' }, 403);
+    }
+
+    const { name, icon } = await c.req.json();
+    if (!name) {
+      return c.json({ error: 'name is required' }, 400);
+    }
+
+    const supabase = getSupabaseClient();
+    const id = name.toLowerCase().replace(/\s+/g, '_');
+
+    // Get max sort_order
+    const { data: maxData } = await supabase
+      .from('vocabulary_categories')
+      .select('sort_order')
+      .order('sort_order', { ascending: false })
+      .limit(1);
+
+    const newOrder = (maxData?.[0]?.sort_order || 0) + 1;
+
+    const { data, error } = await supabase
+      .from('vocabulary_categories')
+      .insert({
+        id,
+        name,
+        icon: icon || '📚',
+        enabled: true,
+        sort_order: newOrder
+      })
+      .select()
+      .single();
+
+    if (error) {
+      console.error('❌ Error creating category:', error);
+      throw error;
+    }
+
+    console.log(`✅ Category created: ${name}`);
+    return c.json({
+      success: true,
+      category: {
+        id: data.id,
+        name: data.name,
+        icon: data.icon,
+        enabled: data.enabled,
+        order: data.sort_order
+      }
+    });
+  } catch (error: any) {
+    console.error('❌ Create category error:', error);
+    return c.json({
+      error: error?.message || error?.details || error?.hint || String(error),
+      details: error
     }, 500);
   }
 });

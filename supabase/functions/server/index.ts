@@ -1567,10 +1567,14 @@ app.get("/admin/categories", async (c) => {
 app.post("/admin/categories", async (c) => {
   try {
     const supabase = getSupabaseClient();
+
     const { name, icon } = await c.req.json();
     if (!name) return c.json({ error: 'name is required' }, 400);
 
-    const id = name.toLowerCase().replace(/\s+/g, '_');
+    // Generate unique ID with timestamp to avoid collisions
+    const baseId = name.toLowerCase().replace(/\s+/g, '_');
+    const timestamp = Date.now();
+    const id = `${baseId}_${timestamp}`;
 
     // Get max sort_order
     const { data: maxData } = await supabase
@@ -1604,8 +1608,12 @@ app.post("/admin/categories", async (c) => {
         order: data.sort_order
       }
     });
-  } catch (error) {
-    return c.json({ error: String(error) }, 500);
+  } catch (error: any) {
+    console.error('❌ Error creating category:', error);
+    return c.json({
+      error: error?.message || error?.details || error?.hint || String(error),
+      details: error
+    }, 500);
   }
 });
 
