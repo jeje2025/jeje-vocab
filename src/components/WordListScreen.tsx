@@ -1306,14 +1306,9 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
         onRemoveWord={removeBasketWord}
         onClear={clearBasket}
         onActionComplete={async () => {
-          console.log('[WordListScreen] onActionComplete called');
           setShowBasketModal(false);
           if (onRefreshVocabulary) {
-            console.log('[WordListScreen] Calling onRefreshVocabulary...');
             await onRefreshVocabulary();
-            console.log('[WordListScreen] onRefreshVocabulary completed');
-          } else {
-            console.warn('[WordListScreen] onRefreshVocabulary is not defined!');
           }
         }}
         currentVocabularyId={vocabularyId}

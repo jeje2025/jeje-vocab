@@ -231,20 +231,13 @@ export default function App() {
 
   // Refresh current vocabulary data (invalidate cache and reload)
   const refreshCurrentVocabulary = useCallback(async () => {
-    console.log('[App] refreshCurrentVocabulary called');
-    console.log('[App] selectedVocabulary:', selectedVocabulary);
-
     if (!selectedVocabulary?.id) {
-      console.warn('[App] No selectedVocabulary.id, skipping refresh');
       return;
     }
 
     const cacheKey = selectedVocabulary.unitNumber
       ? `${selectedVocabulary.id}-unit-${selectedVocabulary.unitNumber}`
       : selectedVocabulary.id;
-
-    console.log('[App] Cache key:', cacheKey);
-    console.log('[App] Invalidating cache and reloading...');
 
     // Invalidate cache
     delete vocabularyCacheRef.current[cacheKey];
@@ -253,12 +246,10 @@ export default function App() {
     try {
       setIsLoadingVocabulary(true);
       const words = await fetchVocabulary(selectedVocabulary.id, selectedVocabulary.unitNumber);
-      console.log(`✅ [App] Refreshed ${words.length} words for vocabulary`);
       vocabularyCacheRef.current[cacheKey] = words;
       setVocabularyWords(words);
-      console.log('[App] vocabularyWords state updated');
     } catch (error) {
-      console.error('❌ [App] Error refreshing vocabulary:', error);
+      console.error('Error refreshing vocabulary:', error);
     } finally {
       setIsLoadingVocabulary(false);
     }
@@ -804,10 +795,7 @@ export default function App() {
               onAddToStarred={wordLists.toggleStarred}
               onMoveToGraveyard={wordLists.moveToGraveyard}
               onDeletePermanently={wordLists.deletePermanently}
-              onStartFlashcards={() => {
-                console.log('[App] onStartFlashcards called, navigating to flashcard');
-                navigateToScreen('flashcard');
-              }}
+              onStartFlashcards={() => navigateToScreen('flashcard')}
               onRefreshVocabulary={refreshCurrentVocabulary}
             />
           );
@@ -838,10 +826,6 @@ export default function App() {
           />
         );
       case 'flashcard':
-        console.log('[App] === FLASHCARD SCREEN RENDERING ===');
-        console.log('[App] starredWords:', wordLists.starredWords);
-        console.log('[App] graveyardWords:', wordLists.graveyardWords);
-        console.log('[App] vocabularyWords for flashcard:', vocabularyWords.length);
         return <FlashcardScreen
           onBack={navigateBack}
           onBackToHome={handleBackToHome}
