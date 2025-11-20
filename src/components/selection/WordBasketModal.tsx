@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { AnimatePresence, motion } from 'motion/react';
 import { X, ChevronDown, Loader2, FolderPlus, FolderCheck } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
@@ -77,6 +77,9 @@ export function WordBasketModal({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [batchProgress, setBatchProgress] = useState<{ current: number; total: number } | null>(null);
 
+  const newTitleInputRef = useRef<HTMLInputElement>(null);
+  const selectInputRef = useRef<HTMLSelectElement>(null);
+
   const selectedCount = words.length;
 
   const handleClose = () => {
@@ -127,8 +130,30 @@ export function WordBasketModal({
         setSelectedVocabularyId('');
       }
       fetchExistingVocabularies();
+
+      // Auto-focus input after modal opens
+      setTimeout(() => {
+        if (currentVocabularyId) {
+          selectInputRef.current?.focus();
+        } else {
+          newTitleInputRef.current?.focus();
+        }
+      }, 100);
     }
   }, [open, currentVocabularyId]);
+
+  // Auto-focus when mode changes
+  useEffect(() => {
+    if (open) {
+      setTimeout(() => {
+        if (mode === 'new') {
+          newTitleInputRef.current?.focus();
+        } else {
+          selectInputRef.current?.focus();
+        }
+      }, 50);
+    }
+  }, [mode, open]);
 
   const modalTitle = useMemo(
     () =>
@@ -361,6 +386,7 @@ export function WordBasketModal({
                   <div>
                     <label className="text-sm text-gray-500 mb-1 block">단어장 이름</label>
                     <input
+                      ref={newTitleInputRef}
                       type="text"
                       value={newTitle}
                       onChange={(e) => setNewTitle(e.target.value)}
@@ -373,6 +399,7 @@ export function WordBasketModal({
                     <label className="text-sm text-gray-500 mb-2 block">추가할 단어장 선택</label>
                     <div className="relative">
                       <select
+                        ref={selectInputRef}
                         value={selectedVocabularyId}
                         onChange={(e) => setSelectedVocabularyId(e.target.value)}
                         className="w-full appearance-none rounded-2xl border border-gray-200 px-4 py-2.5 pr-10 focus:outline-none focus:ring-2 focus:ring-[#C4B5FD]"
