@@ -18,6 +18,25 @@ export interface GenerateOptions {
 }
 
 /**
+ * Clean and normalize word by removing markdown and special characters
+ */
+function cleanWord(word: string): string {
+  return word
+    .trim()
+    // Remove markdown bold/italic
+    .replace(/\*\*/g, '')
+    .replace(/\*/g, '')
+    .replace(/__/g, '')
+    .replace(/_/g, '')
+    // Remove other common markdown
+    .replace(/~~(.*?)~~/g, '$1') // strikethrough
+    .replace(/`/g, '') // code
+    // Remove extra whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+/**
  * Generate complete vocabulary data for words using Gemini API
  * Processes words in batches with parallel processing and retry logic
  */
@@ -26,9 +45,12 @@ export async function generateVocabularyBatch(
   authToken: string,
   options?: GenerateOptions
 ): Promise<any[]> {
+  // Clean all words before processing
+  const cleanedWords = words.map(w => ({ word: cleanWord(w.word) }));
+
   const batches: WordToGenerate[][] = [];
-  for (let i = 0; i < words.length; i += BATCH_SIZE) {
-    batches.push(words.slice(i, i + BATCH_SIZE));
+  for (let i = 0; i < cleanedWords.length; i += BATCH_SIZE) {
+    batches.push(cleanedWords.slice(i, i + BATCH_SIZE));
   }
 
   const allResults: { index: number; items: any[] }[] = [];
