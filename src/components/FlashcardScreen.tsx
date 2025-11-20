@@ -967,14 +967,13 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
         onRemoveWord={removeBasketWord}
         onClear={clearBasket}
         onActionComplete={async () => {
-          console.log('[FlashcardScreen] onActionComplete called');
           setShowBasketModal(false);
+          // Invalidate vocabulary list cache to show new/updated vocabularies
+          const { invalidateVocabularyListCache } = await import('./VocabularyListScreen');
+          invalidateVocabularyListCache();
+          // Refresh current vocabulary if applicable
           if (onRefreshVocabulary) {
-            console.log('[FlashcardScreen] Calling onRefreshVocabulary...');
             await onRefreshVocabulary();
-            console.log('[FlashcardScreen] onRefreshVocabulary completed');
-          } else {
-            console.warn('[FlashcardScreen] onRefreshVocabulary is not defined!');
           }
         }}
         currentVocabularyId={vocabularyId}

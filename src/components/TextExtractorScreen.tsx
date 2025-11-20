@@ -826,7 +826,12 @@ export function TextExtractorScreen({ onBack, onNavigateToTutor }: TextExtractor
           words={basketWords}
           onRemoveWord={removeBasketWord}
           onClear={clearBasket}
-          onActionComplete={() => setShowBasketModal(false)}
+          onActionComplete={async () => {
+            setShowBasketModal(false);
+            // Invalidate vocabulary list cache to show new/updated vocabularies
+            const { invalidateVocabularyListCache } = await import('./VocabularyListScreen');
+            invalidateVocabularyListCache();
+          }}
         />
 
         {/* Follow-up Question Modal */}

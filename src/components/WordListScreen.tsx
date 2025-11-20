@@ -1307,6 +1307,10 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
         onClear={clearBasket}
         onActionComplete={async () => {
           setShowBasketModal(false);
+          // Invalidate vocabulary list cache to show new/updated vocabularies
+          const { invalidateVocabularyListCache } = await import('./VocabularyListScreen');
+          invalidateVocabularyListCache();
+          // Refresh current vocabulary if applicable
           if (onRefreshVocabulary) {
             await onRefreshVocabulary();
           }
