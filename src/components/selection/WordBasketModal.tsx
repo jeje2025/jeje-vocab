@@ -131,14 +131,15 @@ export function WordBasketModal({
       }
       fetchExistingVocabularies();
 
-      // Auto-focus input after modal opens
+      // Auto-focus input after modal opens - 모바일을 위해 딜레이 증가
       setTimeout(() => {
-        if (currentVocabularyId) {
-          selectInputRef.current?.focus();
-        } else {
-          newTitleInputRef.current?.focus();
+        const inputToFocus = currentVocabularyId ? selectInputRef.current : newTitleInputRef.current;
+        if (inputToFocus) {
+          inputToFocus.focus();
+          // 모바일에서도 작동하도록 추가 시도
+          inputToFocus.click();
         }
-      }, 100);
+      }, 300);
     }
   }, [open, currentVocabularyId]);
 
@@ -146,12 +147,13 @@ export function WordBasketModal({
   useEffect(() => {
     if (open) {
       setTimeout(() => {
-        if (mode === 'new') {
-          newTitleInputRef.current?.focus();
-        } else {
-          selectInputRef.current?.focus();
+        const inputToFocus = mode === 'new' ? newTitleInputRef.current : selectInputRef.current;
+        if (inputToFocus) {
+          inputToFocus.focus();
+          // 모바일에서도 작동하도록 추가 시도
+          inputToFocus.click();
         }
-      }, 50);
+      }, 200);
     }
   }, [mode, open]);
 

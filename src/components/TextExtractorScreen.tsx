@@ -812,16 +812,7 @@ export function TextExtractorScreen({ onBack, onNavigateToTutor }: TextExtractor
         </div>
       </div>
 
-        <WordBasketBar
-          count={basketCount}
-          onReview={() => setShowBasketModal(true)}
-          onClear={() => {
-            if (basketCount > 0) {
-              clearBasket();
-              toast.info('선택한 단어를 비웠어요.');
-            }
-          }}
-        />
+        {/* WordBasketBar 제거 - 이미 VocabularyBox에 장바구니 추가 버튼이 있음 */}
         <WordBasketModal
           open={showBasketModal}
           onClose={() => setShowBasketModal(false)}
