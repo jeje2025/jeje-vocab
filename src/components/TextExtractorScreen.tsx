@@ -417,8 +417,10 @@ export function TextExtractorScreen({ onBack, onNavigateToTutor }: TextExtractor
 
   const handleClearResults = () => {
     setResults(null);
+    setInputText(''); // 입력창도 비우기
     localStorage.removeItem('textExtractorResults');
-    toast.info('결과를 비웠습니다.');
+    localStorage.removeItem('textExtractorInput');
+    toast.info('결과와 입력창을 비웠습니다.');
   };
 
   const handleAskFollowUpQuestion = () => {

@@ -25,15 +25,19 @@ interface Card {
 }
 
 export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete }: MemoryMatchGameProps) {
-  const [cards, setCards] = useState<Card[]>([]);
+  const WORDS_PER_PAGE = 8; // 8단어 = 16카드 (4x4)
+
+  const [allCards, setAllCards] = useState<Card[]>([]); // 전체 카드 (한 번만 섞음)
+  const [currentPage, setCurrentPage] = useState(0);
   const [flippedCards, setFlippedCards] = useState<string[]>([]);
   const [moves, setMoves] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [showCongrats, setShowCongrats] = useState(false);
+  const [showPageComplete, setShowPageComplete] = useState(false);
 
   // Initialize game - create shuffled cards ONCE
   useEffect(() => {
-    if (words.length > 0 && cards.length === 0) {
+    if (words.length > 0 && allCards.length === 0) {
       // Create cards (word + meaning for each word)
       const newCards: Card[] = [];
       words.forEach((word) => {
@@ -57,9 +61,15 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
 
       // Shuffle cards - 딱 한 번만 섞음! 절대 다시 섞지 않음
       const shuffled = newCards.sort(() => Math.random() - 0.5);
-      setCards(shuffled);
+      setAllCards(shuffled);
     }
-  }, [words, cards.length]);
+  }, [words, allCards.length]);
+
+  // 현재 페이지의 카드들
+  const totalPages = Math.ceil(words.length / WORDS_PER_PAGE);
+  const startIdx = currentPage * WORDS_PER_PAGE * 2; // 2 = word + meaning
+  const endIdx = startIdx + WORDS_PER_PAGE * 2;
+  const cards = allCards.slice(startIdx, endIdx);
 
   // Handle card click
   const handleCardClick = (cardId: string) => {
@@ -70,7 +80,7 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     if (flippedCards.length >= 2) return;
 
     // Flip the card
-    setCards((prev) =>
+    setAllCards((prev) =>
       prev.map((c) => (c.id === cardId ? { ...c, isFlipped: true } : c))
     );
     setFlippedCards((prev) => [...prev, cardId]);
@@ -86,7 +96,7 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
       if (firstCard && firstCard.wordId === card.wordId && firstCard.type !== card.type) {
         // Match found!
         setTimeout(() => {
-          setCards((prev) =>
+          setAllCards((prev) =>
             prev.map((c) =>
               c.wordId === card.wordId ? { ...c, isMatched: true, isFlipped: false } : c
             )
@@ -98,21 +108,32 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
           setFlippedCards([]);
           setIsProcessing(false);
 
-          // Check if all cards are matched
-          const unmatchedCards = cards.filter((c) => !c.isMatched && c.wordId !== card.wordId);
-          if (unmatchedCards.length === 0) {
-            setTimeout(() => {
-              setShowCongrats(true);
-              if (onGameComplete) {
-                onGameComplete();
-              }
-            }, 500);
+          // Check if all cards in current page are matched
+          const unmatchedCardsInPage = cards.filter((c) => !c.isMatched && c.wordId !== card.wordId);
+          if (unmatchedCardsInPage.length === 0) {
+            // Current page completed!
+            const hasMorePages = currentPage < totalPages - 1;
+
+            if (hasMorePages) {
+              // Show page complete modal
+              setTimeout(() => {
+                setShowPageComplete(true);
+              }, 500);
+            } else {
+              // All pages completed!
+              setTimeout(() => {
+                setShowCongrats(true);
+                if (onGameComplete) {
+                  onGameComplete();
+                }
+              }, 500);
+            }
           }
         }, 600);
       } else {
         // No match - flip back
         setTimeout(() => {
-          setCards((prev) =>
+          setAllCards((prev) =>
             prev.map((c) =>
               c.id === firstCardId || c.id === cardId ? { ...c, isFlipped: false } : c
             )
@@ -124,9 +145,16 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     }
   };
 
+  // Go to next page
+  const goToNextPage = () => {
+    setCurrentPage((prev) => prev + 1);
+    setShowPageComplete(false);
+    setMoves(0);
+  };
+
   // Reset game - 위치는 유지하고 상태만 초기화
   const resetGame = () => {
-    setCards((prev) =>
+    setAllCards((prev) =>
       prev.map((c) => ({
         ...c,
         isFlipped: false,
@@ -136,11 +164,15 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
     setFlippedCards([]);
     setMoves(0);
     setShowCongrats(false);
+    setShowPageComplete(false);
+    setCurrentPage(0);
     setIsProcessing(false);
   };
 
   const matchedCount = cards.filter((c) => c.isMatched).length / 2; // 2 cards per word
   const totalWords = words.length;
+  const currentPageNumber = currentPage + 1;
+  const wordsInCurrentPage = Math.min(WORDS_PER_PAGE, words.length - currentPage * WORDS_PER_PAGE);
 
   return (
     <motion.div
@@ -180,8 +212,12 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
       {/* Stats */}
       <div className="flex justify-center gap-6 p-3 bg-white/60">
         <div className="text-center">
-          <p className="text-xs text-red-500 font-medium">맞춘 개수</p>
-          <p className="text-lg font-bold text-red-700">{matchedCount}/{totalWords}</p>
+          <p className="text-xs text-red-500 font-medium">페이지</p>
+          <p className="text-lg font-bold text-red-700">{currentPageNumber}/{totalPages}</p>
+        </div>
+        <div className="text-center">
+          <p className="text-xs text-red-500 font-medium">이번 페이지</p>
+          <p className="text-lg font-bold text-red-700">{matchedCount}/{wordsInCurrentPage}</p>
         </div>
         <div className="text-center">
           <p className="text-xs text-red-500 font-medium">시도 횟수</p>
@@ -269,6 +305,39 @@ export function MemoryMatchGame({ words, onWordCleared, onClose, onGameComplete 
           ))}
         </div>
       </div>
+
+      {/* Page Complete Modal */}
+      <AnimatePresence>
+        {showPageComplete && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 bg-black/50 flex items-center justify-center z-60"
+          >
+            <motion.div
+              initial={{ scale: 0.5, y: 50 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.5, y: 50 }}
+              className="bg-white rounded-2xl p-8 mx-4 text-center shadow-2xl"
+            >
+              <div className="text-5xl mb-4">🎯</div>
+              <h3 className="text-2xl font-bold text-gray-900 mb-2">페이지 {currentPageNumber} 완료!</h3>
+              <p className="text-gray-600 mb-1">{wordsInCurrentPage}개 단어를 맞췄어요</p>
+              <p className="text-sm text-gray-500 mb-6">
+                다음 페이지로 이동하세요 ({currentPageNumber}/{totalPages})
+              </p>
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={goToNextPage}
+                className="w-full px-6 py-3 bg-gradient-to-r from-red-600 to-red-700 text-white rounded-xl font-semibold"
+              >
+                다음 페이지 시작 →
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* Congratulations Modal */}
       <AnimatePresence>
