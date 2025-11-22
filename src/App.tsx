@@ -29,6 +29,7 @@ import { SubjectsSection } from './components/SubjectsSection';
 import { ProgressCard } from './components/ProgressCard';
 import { CalendarWidget } from './components/CalendarWidget';
 import { BottomNavigation } from './components/BottomNavigation';
+import { VocabularyListSection } from './components/VocabularyListSection';
 import { QuizScreen } from './components/QuizScreen';
 import { GameMapQuizScreen } from './components/GameMapQuizScreen';
 import { QuizCompletionScreen } from './components/QuizCompletionScreen';
@@ -620,23 +621,44 @@ export default function App() {
               onLogout={handleLogout}
               userName={auth.currentUser?.user_metadata?.name || auth.currentUser?.email?.split('@')[0]}
             />
-            <SubjectsSection 
-              onSubjectClick={handleSubjectClick} 
+            <SubjectsSection
+              onSubjectClick={handleSubjectClick}
+              onCalendarClick={() => navigateToScreen('calendar')}
               starredCount={wordLists.starredWords.length}
               graveyardCount={wordLists.graveyardWords.length}
               wrongAnswersCount={wordLists.wrongAnswersWords.length}
             />
-            <div className="px-6">
-              <ProgressCard 
-                illustrationImage={illustrationImage} 
-                onStartQuiz={() => navigateToScreen('vocabulary-list')}
-                currentProgress={currentProgress}
-                totalQuizzesCompleted={totalQuizzesCompleted}
-              />
-            </div>
-            <div className="px-6">
-              <CalendarWidget onClick={() => navigateToScreen('calendar')} />
-            </div>
+            <VocabularyListSection
+              onSelectVocabulary={(id, title, unitNumber) => {
+                selectVocabulary(id, title, unitNumber);
+                setSelectedSubject({
+                  id: id,
+                  name: title,
+                  description: '',
+                  progress: 0,
+                  icon: null,
+                  color: '#491B6D'
+                });
+                navigateToScreen('game-map-quiz');
+              }}
+              onStartFlashcards={(id, title, unitNumber) => {
+                selectVocabulary(id, title, unitNumber);
+                setSelectedSubject({
+                  id: id,
+                  name: title,
+                  description: '',
+                  progress: 0,
+                  icon: null,
+                  color: '#491B6D'
+                });
+                navigateToScreen('flashcard');
+              }}
+              getAuthToken={auth.getAuthToken}
+              onRefresh={() => {
+                // Invalidate cache and refresh
+                wordLists.refreshMyVocabularies();
+              }}
+            />
             {/* Copyright Footer */}
             <div className="px-6 pb-4 pt-3">
               <div className="text-center text-gray-600" style={{ fontSize: '11px' }}>

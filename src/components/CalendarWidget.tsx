@@ -33,7 +33,7 @@ export function CalendarWidget({ onClick }: CalendarWidgetProps) {
       transition={{ delay: 0.4, duration: 0.5 }}
       onClick={onClick}
       whileTap={{ scale: 0.98 }}
-      className="p-6 bg-white/95 backdrop-blur-xl rounded-[24px] shadow-lg border border-gray-100 cursor-pointer"
+      className="p-6 bg-white rounded-[24px] shadow-lg border border-gray-100 cursor-pointer"
     >
       <div className="flex items-center justify-between mb-5">
         <h3 className="text-[18px] font-bold text-[#091A7A]">시험 일정 관리</h3>

@@ -242,20 +242,56 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
   // 예문에서 단어 하이라이트 함수
   const highlightWord = (text: string, targetWord: string) => {
     if (!text || !targetWord) return text;
-    
-    // 대소문자 무관하게 단어 찾기 (단어 경계 고려)
-    const regex = new RegExp(`\\b(${targetWord})\\b`, 'gi');
-    const parts = text.split(regex);
-    
-    return parts.map((part, index) => {
-      if (part.toLowerCase() === targetWord.toLowerCase()) {
+
+    // 먼저 **단어** 마크다운 문법을 처리
+    const markdownRegex = /\*\*([^*]+)\*\*/g;
+    const segments: (string | { text: string; bold: boolean })[] = [];
+    let lastIndex = 0;
+    let match;
+
+    while ((match = markdownRegex.exec(text)) !== null) {
+      // 매칭 전 텍스트
+      if (match.index > lastIndex) {
+        segments.push(text.substring(lastIndex, match.index));
+      }
+      // 굵게 표시할 텍스트
+      segments.push({ text: match[1], bold: true });
+      lastIndex = match.index + match[0].length;
+    }
+    // 남은 텍스트
+    if (lastIndex < text.length) {
+      segments.push(text.substring(lastIndex));
+    }
+
+    // segments가 비어있으면 원본 텍스트 사용
+    if (segments.length === 0) {
+      segments.push(text);
+    }
+
+    // 각 segment에서 targetWord를 추가로 하이라이트
+    return segments.map((segment, segIndex) => {
+      if (typeof segment === 'string') {
+        // 일반 텍스트: targetWord 하이라이트
+        const regex = new RegExp(`\\b(${targetWord})\\b`, 'gi');
+        const parts = segment.split(regex);
+        return parts.map((part, index) => {
+          if (part.toLowerCase() === targetWord.toLowerCase()) {
+            return (
+              <span key={`${segIndex}-${index}`} style={{ color: '#491B6D', fontWeight: 700 }}>
+                {part}
+              </span>
+            );
+          }
+          return <span key={`${segIndex}-${index}`}>{part}</span>;
+        });
+      } else {
+        // 마크다운으로 굵게 표시된 텍스트
         return (
-          <span key={index} style={{ color: '#491B6D', fontWeight: 700 }}>
-            {part}
+          <span key={`${segIndex}-bold`} style={{ color: '#491B6D', fontWeight: 700 }}>
+            {segment.text}
           </span>
         );
       }
-      return part;
     });
   };
 

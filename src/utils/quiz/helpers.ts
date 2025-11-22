@@ -58,7 +58,7 @@ export const normalizeWordForQuiz = (word: any): NormalizedWord | null => {
 
   return {
     id: String(normalizedId),
-    word: normalizedWord,
+    term: normalizedWord, // Changed from 'word' to 'term' to match NormalizedWord type
     meaning: word?.meaning || word?.translation || '',
     translation: word?.translation || '',
     example: word?.example || word?.example_sentence || '',

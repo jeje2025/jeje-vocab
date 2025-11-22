@@ -25,6 +25,7 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
   const [selectedCategory, setSelectedCategory] = useState('All');
   const [categories, setCategories] = useState<string[]>(['All']);
   const [selectedVocabs, setSelectedVocabs] = useState<Set<string>>(new Set());
+  const [isAdding, setIsAdding] = useState(false);
 
   useEffect(() => {
     fetchCategories();
@@ -152,12 +153,20 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
     });
   };
 
-  const handleAddSelected = () => {
+  const handleAddSelected = async () => {
+    setIsAdding(true);
     const selectedVocabsList = vocabularies.filter(v => selectedVocabs.has(v.id));
-    selectedVocabsList.forEach(vocab => {
-      onSelectVocabulary(vocab);
-    });
+
+    // Process all selected vocabularies
+    for (const vocab of selectedVocabsList) {
+      await onSelectVocabulary(vocab);
+    }
+
     setSelectedVocabs(new Set());
+    setIsAdding(false);
+
+    // Navigate back to home screen
+    onBack();
   };
 
   return (
@@ -189,7 +198,7 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
           <div className="flex-1 overflow-y-auto scrollbar-hide">
             <div className="sticky top-0 z-20 bg-transparent backdrop-blur-xl border-b border-white/20">
               {/* Search Bar & Add Button */}
-              <div className="flex items-center gap-3 px-4 py-3">
+              <div className="flex items-center gap-3 px-6 py-4">
                 <div className="flex-1">
                   <div className="relative">
                     <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-5 h-5 text-[#8B5CF6]/50" />
@@ -204,22 +213,30 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
                 </div>
 
                 {/* Add Button */}
-                {selectedVocabs.size > 0 && (
-                  <motion.button
-                    whileTap={{ scale: 0.95 }}
-                    onClick={handleAddSelected}
-                    className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-full px-5 py-3 flex items-center gap-2 shadow-lg whitespace-nowrap"
-                    style={{ fontSize: '14px', fontWeight: 600 }}
-                  >
-                    <Plus className="w-4 h-4" />
-                    추가 ({selectedVocabs.size})
-                  </motion.button>
-                )}
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={handleAddSelected}
+                  disabled={isAdding || selectedVocabs.size === 0}
+                  className="bg-gradient-to-r from-[#8B5CF6] to-[#7C3AED] text-white rounded-full px-5 py-3 flex items-center gap-2 shadow-lg whitespace-nowrap disabled:opacity-50"
+                  style={{ fontSize: '14px', fontWeight: 600 }}
+                >
+                  {isAdding ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      추가 중...
+                    </>
+                  ) : (
+                    <>
+                      <Plus className="w-4 h-4" />
+                      추가 {selectedVocabs.size > 0 && `(${selectedVocabs.size})`}
+                    </>
+                  )}
+                </motion.button>
               </div>
 
               {/* Category Tabs */}
               <div
-                className="flex gap-3 px-4 pb-3 overflow-x-auto"
+                className="flex gap-3 px-6 pb-4 overflow-x-auto"
                 style={{
                   scrollbarWidth: 'none',
                   msOverflowStyle: 'none',
@@ -234,13 +251,13 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
                       e.stopPropagation();
                       setSelectedCategory(category);
                     }}
-                    className={`px-6 py-2.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 active:scale-95 ${
+                    className={`px-3 py-1.5 rounded-full whitespace-nowrap transition-all flex-shrink-0 active:scale-95 ${
                       selectedCategory === category
                         ? 'bg-[#091A7A] text-white shadow-lg'
                         : 'bg-transparent text-[#091A7A]'
                     }`}
                     style={{
-                      fontSize: '15px',
+                      fontSize: '12px',
                       fontWeight: 600,
                       touchAction: 'manipulation',
                       WebkitTapHighlightColor: 'transparent'
@@ -286,10 +303,6 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
                               </svg>
                             )}
                           </div>
-                        </div>
-
-                        <div className="w-10 h-10 bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED] rounded-xl flex items-center justify-center flex-shrink-0">
-                          <Gift className="w-5 h-5 text-white" />
                         </div>
 
                         <div className="flex-1 min-w-0">

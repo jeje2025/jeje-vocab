@@ -1,19 +1,20 @@
 import { create } from 'zustand';
 
 // Quiz mode types
-type QuizMode = 'normal' | 'match' | 'game';
+type QuizMode = 'normal' | 'match' | 'game' | 'fill-in';
 type MatchGameType = 'card-match-word' | 'card-match-meaning';
 type GameType = 'fall' | 'speed';
+type FillInType = 'en-to-kr' | 'kr-to-en'; // 영->한 (단어->뜻), 한->영 (뜻->단어)
 
 // Question type from GameMapQuizScreen
-export type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence';
+export type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence' | 'fill-in-word' | 'fill-in-meaning';
 
 export interface Question {
   id: string;
   text: string;
   type: QuestionType;
   options: string[];
-  correctAnswer: number | number[];
+  correctAnswer: number | number[] | string;
   explanation?: string;
   word?: any;
 }
@@ -41,6 +42,7 @@ interface QuizState {
   selectedAnswers: number[];
   showFeedback: boolean;
   lastAnswerCorrect: boolean | null;
+  aiFeedback: string | null;
   stageScore: number;
   correctAnswersCount: number;
 
@@ -48,6 +50,7 @@ interface QuizState {
   selectedQuizMode: QuizMode;
   matchGameType: MatchGameType | null;
   gameType: GameType | null;
+  fillInType: FillInType | null;
   showQuizModeSelector: boolean;
 
   // Progress tracking
@@ -78,6 +81,7 @@ interface QuizState {
   setSelectedAnswers: (answers: number[]) => void;
   setShowFeedback: (show: boolean) => void;
   setLastAnswerCorrect: (correct: boolean | null) => void;
+  setAiFeedback: (feedback: string | null) => void;
   setStageScore: (score: number) => void;
   incrementStageScore: (points: number) => void;
   setCorrectAnswersCount: (count: number) => void;
@@ -86,6 +90,7 @@ interface QuizState {
   setQuizMode: (mode: QuizMode) => void;
   setMatchGameType: (type: MatchGameType | null) => void;
   setGameType: (type: GameType | null) => void;
+  setFillInType: (type: FillInType | null) => void;
   setShowQuizModeSelector: (show: boolean) => void;
 
   setShowStageComplete: (show: boolean) => void;
@@ -129,12 +134,14 @@ const initialState = {
   selectedAnswers: [],
   showFeedback: false,
   lastAnswerCorrect: null,
+  aiFeedback: null,
   stageScore: 0,
   correctAnswersCount: 0,
 
   selectedQuizMode: 'normal' as QuizMode,
   matchGameType: null,
   gameType: null,
+  fillInType: null,
   showQuizModeSelector: false,
 
   showStageComplete: false,
@@ -180,6 +187,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   setSelectedAnswers: (answers) => set({ selectedAnswers: answers }),
   setShowFeedback: (show) => set({ showFeedback: show }),
   setLastAnswerCorrect: (correct) => set({ lastAnswerCorrect: correct }),
+  setAiFeedback: (feedback) => set({ aiFeedback: feedback }),
   setStageScore: (score) => set({ stageScore: score }),
   incrementStageScore: (points) => set((state) => ({
     stageScore: state.stageScore + points
@@ -193,6 +201,7 @@ export const useQuizStore = create<QuizState>((set, get) => ({
   setQuizMode: (mode) => set({ selectedQuizMode: mode }),
   setMatchGameType: (type) => set({ matchGameType: type }),
   setGameType: (type) => set({ gameType: type }),
+  setFillInType: (type) => set({ fillInType: type }),
   setShowQuizModeSelector: (show) => set({ showQuizModeSelector: show }),
 
   // Progress tracking
@@ -235,12 +244,14 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       selectedAnswers: [],
       showFeedback: false,
       lastAnswerCorrect: null,
+      aiFeedback: null,
       stageScore: 0,
       correctAnswersCount: 0,
       startTime: null,
       showStageComplete: false,
       matchGameType: null,
-      gameType: null
+      gameType: null,
+      fillInType: null
     });
   },
 
@@ -249,7 +260,8 @@ export const useQuizStore = create<QuizState>((set, get) => ({
       currentQuestion: state.currentQuestion + 1,
       selectedAnswers: [],
       showFeedback: false,
-      lastAnswerCorrect: null
+      lastAnswerCorrect: null,
+      aiFeedback: null
     }));
   },
 

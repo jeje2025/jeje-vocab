@@ -65,126 +65,38 @@ export function ProgressCard({
       transition={{ delay: 0.2, duration: 0.5 }}
       className="relative"
     >
-      {/* Reference Books Icon - Beautiful floating animations */}
+      {/* Reference Books Icon */}
       <motion.div
         initial={{ opacity: 0, scale: 0.8, y: 20, rotate: -10 }}
-        animate={{ 
-          opacity: 0.95, 
-          scale: 1, 
+        animate={{
+          opacity: 0.95,
+          scale: 1,
           rotate: 0,
-          y: [0, -12, 0],
-          x: [0, 4, 0],
-          rotateY: [0, 5, 0]
+          y: 0
         }}
-        transition={{ 
-          opacity: { delay: 0.6, duration: 0.8 },
-          scale: { delay: 0.6, duration: 0.8, type: "spring", stiffness: 200 },
-          rotate: { delay: 0.6, duration: 0.8 },
-          y: {
-            duration: 7,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 1.2
-          },
-          x: {
-            duration: 9,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 0.8
-          },
-          rotateY: {
-            duration: 12,
-            repeat: Infinity,
-            ease: "easeInOut",
-            delay: 2
-          }
+        transition={{
+          delay: 0.6,
+          duration: 0.8,
+          type: "spring",
+          stiffness: 200
         }}
         className="absolute -top-6 right-2 opacity-95 z-50 pointer-events-none"
         style={{
           width: '85px',
           height: '85px',
-          filter: 'drop-shadow(0 8px 20px rgba(9, 26, 122, 0.25))',
-          transformStyle: 'preserve-3d'
+          filter: 'drop-shadow(0 8px 20px rgba(9, 26, 122, 0.25))'
         }}
       >
         <Icons />
-        
-        {/* Magical floating particles around the book icon */}
-        <motion.div
-          className="absolute -top-3 -left-3 w-2 h-2 bg-yellow-400/60 rounded-full"
-          animate={{ 
-            scale: [0, 1.2, 0],
-            opacity: [0, 0.8, 0],
-            rotate: [0, 180, 360],
-            x: [0, 6, 0],
-            y: [0, -4, 0]
-          }}
-          transition={{ 
-            duration: 4,
-            repeat: Infinity,
-            delay: 2.5,
-            ease: "easeInOut"
-          }}
-        />
-        
-        <motion.div
-          className="absolute -bottom-2 -right-3 w-1.5 h-1.5 bg-cyan-400/70 rounded-full"
-          animate={{ 
-            scale: [0, 1, 0],
-            opacity: [0, 0.9, 0],
-            x: [0, -5, 0],
-            y: [0, 3, 0]
-          }}
-          transition={{ 
-            duration: 3.5,
-            repeat: Infinity,
-            delay: 3.8,
-            ease: "easeInOut"
-          }}
-        />
-        
-        <motion.div
-          className="absolute top-2 right-2 w-1 h-1 bg-purple-400/50 rounded-full"
-          animate={{ 
-            scale: [0, 0.8, 0],
-            opacity: [0, 0.6, 0],
-            x: [0, -3, 0],
-            y: [0, 6, 0]
-          }}
-          transition={{ 
-            duration: 5,
-            repeat: Infinity,
-            delay: 5.2,
-            ease: "easeInOut"
-          }}
-        />
-        
-        <motion.div
-          className="absolute top-4 left-1 w-0.5 h-0.5 bg-pink-400/60 rounded-full"
-          animate={{ 
-            scale: [0, 1.5, 0],
-            opacity: [0, 0.7, 0],
-            x: [0, 4, 0],
-            y: [0, -8, 0]
-          }}
-          transition={{ 
-            duration: 6,
-            repeat: Infinity,
-            delay: 1.8,
-            ease: "easeInOut"
-          }}
-        />
       </motion.div>
 
       {/* Main Card Container - Matching DailyStreak size */}
-      <motion.div 
+      <motion.div
         whileTap={{ scale: 0.98 }}
         onClick={onStartQuiz}
-        className="relative p-6 bg-card-glass backdrop-blur-lg rounded-[20px] border border-white/20 shadow-card overflow-hidden cursor-pointer"
+        className="relative p-6 rounded-[20px] border border-white/20 shadow-card overflow-hidden cursor-pointer"
         style={{
-          background: 'rgba(249, 250, 251, 0.8)',
-          backdropFilter: 'blur(16px)',
-          WebkitBackdropFilter: 'blur(16px)',
+          background: 'rgba(249, 250, 251, 1)',
           boxShadow: '0 2px 8px 0 rgba(0, 0, 0, 0.08)',
           position: 'relative',
           minHeight: '160px'
@@ -247,15 +159,6 @@ export function ProgressCard({
           />
         </motion.button>
 
-        {/* Subtle pulse animation for button */}
-        <motion.div
-          animate={{ scale: [1, 1.1, 1] }}
-          transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
-          className="absolute bottom-4 right-4 w-12 h-12 pointer-events-none rounded-full z-14"
-          style={{
-            background: 'rgba(173, 200, 255, 0.3)'
-          }}
-        />
 
         {/* Enhanced glass morphism overlay */}
         <div 

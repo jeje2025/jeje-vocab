@@ -1,11 +1,11 @@
-import { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Target, 
-  BookOpen, 
-  Puzzle, 
-  Key, 
-  Trophy, 
+import {
+  Target,
+  BookOpen,
+  Puzzle,
+  Key,
+  Trophy,
   Star,
   CheckCircle,
   Circle,
@@ -16,7 +16,8 @@ import {
   Home,
   ChevronRight,
   Gamepad2,
-  ArrowLeft
+  ArrowLeft,
+  PenTool
 } from 'lucide-react';
 import { BackButton } from './BackButton';
 import { QuizStatusUpdate } from './QuizStatusUpdate';
@@ -42,6 +43,13 @@ import {
   type Stage,
   type NormalizedWord
 } from '../utils/quiz';
+import {
+  generateFillInWordQuestions,
+  generateFillInMeaningQuestions
+} from '../utils/quiz';
+import { useQuizStore } from '../stores/useQuizStore';
+import { useVocabularyLoader } from '../hooks/useVocabularyLoader';
+import { gradeFillInAnswer } from '../utils/gradingApi';
 
 
 interface GameMapQuizScreenProps {
@@ -104,112 +112,71 @@ export function GameMapQuizScreen({
   // Get subject-specific stages and questions
   const subjectId = selectedSubject?.id || 'math';
   const journeyName = vocabularyTitle || subjectNames[subjectId] || "Math Journey";
-  
-  const [stages, setStages] = useState<Stage[]>(subjectStages[subjectId] || subjectStages.math);
-
-  const [currentStage, setCurrentStage] = useState<number | null>(null);
-  const [currentQuestion, setCurrentQuestion] = useState(0);
-  const [selectedAnswers, setSelectedAnswers] = useState<number[]>([]);
-  const [showFeedback, setShowFeedback] = useState(false);
-  const [lastAnswerCorrect, setLastAnswerCorrect] = useState<boolean | null>(null);
-  const [stageScore, setStageScore] = useState(0);
-  const [showStageComplete, setShowStageComplete] = useState(false);
-  const [showVictory, setShowVictory] = useState(false);
-  const [startTime, setStartTime] = useState<Date | null>(null);
-  const [correctAnswersCount, setCorrectAnswersCount] = useState(0);
-  const [showQuizModeSelector, setShowQuizModeSelector] = useState(false);
-  const [selectedQuizMode, setSelectedQuizMode] = useState<'normal' | 'match' | 'game'>('normal');
-  const [matchGameType, setMatchGameType] = useState<'card-match-word' | 'card-match-meaning' | null>(null);
-  const [gameType, setGameType] = useState<'fall' | 'speed' | null>(null);
-  const [pendingStageId, setPendingStageId] = useState<number | null>(null);
   const canOpenPdfExport = !!selectedSubject;
-  const [activeTab, setActiveTab] = useState<'word-list' | 'quiz-map' | 'flashcards' | 'pdf-print'>('word-list');
   const isStarredVocabulary = selectedSubject?.id === 'starred';
-  const [shuffledQuestions, setShuffledQuestions] = useState<Record<number, Question[]>>({});
-  const vocabularyCacheRef = useRef<Record<string, any[]>>({});
-  const loadingVocabularyIdRef = useRef<string | null>(null);
-  const vocabularyVersionRef = useRef<Record<string, number>>({});
-  const loadedVersionRef = useRef<Record<string, number>>({});
-  const requestPromisesRef = useRef<Record<string, Promise<any[]>>>({});
-  const [refreshCounter, setRefreshCounter] = useState(0);
-  const specialSignatureRef = useRef({
-    starred: '',
-    graveyard: '',
-    wrongAnswers: ''
+
+  // Zustand Store - Quiz State Management
+  const {
+    stages, setStages,
+    currentStage, setCurrentStage,
+    currentQuestion, setCurrentQuestion,
+    selectedAnswers, setSelectedAnswers,
+    showFeedback, setShowFeedback,
+    lastAnswerCorrect, setLastAnswerCorrect,
+    aiFeedback, setAiFeedback,
+    stageScore, setStageScore, incrementStageScore,
+    showStageComplete, setShowStageComplete,
+    showVictory, setShowVictory,
+    startTime, setStartTime,
+    correctAnswersCount, setCorrectAnswersCount, incrementCorrectAnswers,
+    showQuizModeSelector, setShowQuizModeSelector,
+    selectedQuizMode, setQuizMode,
+    matchGameType, setMatchGameType,
+    gameType, setGameType,
+    fillInType, setFillInType,
+    pendingStageId, setPendingStageId,
+    activeTab, setActiveTab,
+    shuffledQuestions, updateShuffledQuestionsForStage,
+    completedModes, addCompletedMode,
+    showSentenceTranslation, setShowSentenceTranslation,
+    startQuiz: storeStartQuiz,
+    resetQuiz,
+    nextQuestion: storeNextQuestion,
+    submitAnswer: storeSubmitAnswer,
+    completeStage: storeCompleteStage,
+    unlockNextStage
+  } = useQuizStore();
+
+  // Vocabulary Loader Hook
+  const {
+    rawVocabularyWords,
+    isLoadingWords,
+    refreshVocabulary,
+    invalidateVocabulary
+  } = useVocabularyLoader({
+    propsVocabularyWords,
+    selectedSubject,
+    getAuthToken,
+    starredWordIds,
+    graveyardWordIds,
+    wrongAnswersWordIds
   });
+
+  // Alias for consistency
+  const vocabularyWords = rawVocabularyWords;
+
+  // Initialize stages on mount or when subject changes
+  useEffect(() => {
+    setStages(subjectStages[subjectId] || subjectStages.math);
+  }, [subjectId, setStages]);
+
+  // Shuffle stage questions helper
   const shuffleStageQuestions = useCallback((stageId: number, bank: Record<number, Question[]>) => {
     const baseQuestions = bank[stageId] || [];
     if (!baseQuestions.length) return;
     const shuffled = shuffleArray(baseQuestions);
-    setShuffledQuestions((prev) => ({
-      ...prev,
-      [stageId]: shuffled
-    }));
-  }, []);
-
-  const invalidateVocabulary = useCallback((vocabId: string) => {
-    if (!vocabId) return;
-    delete vocabularyCacheRef.current[vocabId];
-    delete loadedVersionRef.current[vocabId];
-    Object.keys(requestPromisesRef.current).forEach((key) => {
-      if (key.startsWith(`${vocabId}:`)) {
-        delete requestPromisesRef.current[key];
-      }
-    });
-    vocabularyVersionRef.current[vocabId] = (vocabularyVersionRef.current[vocabId] || 0) + 1;
-    setRefreshCounter((prev) => prev + 1);
-  }, []);
-
-  useEffect(() => {
-    const signature = (starredWordIds || []).join('|');
-    if (signature === specialSignatureRef.current.starred) return;
-    specialSignatureRef.current.starred = signature;
-    invalidateVocabulary('starred');
-  }, [starredWordIds, invalidateVocabulary]);
-
-  useEffect(() => {
-    const signature = (graveyardWordIds || []).join('|');
-    if (signature === specialSignatureRef.current.graveyard) return;
-    specialSignatureRef.current.graveyard = signature;
-    invalidateVocabulary('graveyard');
-  }, [graveyardWordIds, invalidateVocabulary]);
-
-  useEffect(() => {
-    const signature = (wrongAnswersWordIds || []).join('|');
-    if (signature === specialSignatureRef.current.wrongAnswers) return;
-    specialSignatureRef.current.wrongAnswers = signature;
-    invalidateVocabulary('wrong-answers');
-  }, [wrongAnswersWordIds, invalidateVocabulary]);
-
-  // Refresh vocabulary function for WordListScreen
-  const refreshVocabulary = useCallback(async () => {
-    console.log('[GameMapQuizScreen] refreshVocabulary called');
-    // If parent provided onRefreshVocabulary, use that
-    if (onRefreshVocabulary) {
-      console.log('[GameMapQuizScreen] Using parent onRefreshVocabulary');
-      await onRefreshVocabulary();
-      return;
-    }
-    // Otherwise, invalidate our own cache
-    console.log('[GameMapQuizScreen] Using local invalidateVocabulary for:', vocabularyId);
-    if (vocabularyId) {
-      invalidateVocabulary(vocabularyId);
-    }
-  }, [onRefreshVocabulary, vocabularyId, invalidateVocabulary]);
-
-  // 각 스테이지별 모드별 완료 여부 추적
-  const [completedModes, setCompletedModes] = useState<Record<number, Set<'normal' | 'match' | 'game'>>>({
-    1: new Set(),
-    2: new Set(),
-    3: new Set(),
-    4: new Set(),
-    5: new Set()
-  });
-
-  // State for vocabulary words
-  const [vocabularyWords, setVocabularyWords] = useState<any[]>([]);
-  const [isLoadingWords, setIsLoadingWords] = useState(true);
-  const [showSentenceTranslation, setShowSentenceTranslation] = useState(false);
+    updateShuffledQuestionsForStage(stageId, shuffled);
+  }, [updateShuffledQuestionsForStage]);
 
   // Filter out graveyard words before building question bank
   // BUT only if this is NOT the graveyard vocabulary itself
@@ -266,141 +233,7 @@ export function GameMapQuizScreen({
     [matchWordPools, filteredWords]
   );
 
-  // Load vocabulary words from server
-  useEffect(() => {
-    // ✅ If parent provided vocabularyWords, use them directly
-    if (propsVocabularyWords && propsVocabularyWords.length > 0) {
-      console.log(`[GameMapQuizScreen] ✅ Using ${propsVocabularyWords.length} words from props (unit-filtered)`);
-      setVocabularyWords(propsVocabularyWords);
-      setIsLoadingWords(false);
-      return;
-    }
-
-    const vocabId = selectedSubject?.id;
-
-    if (!vocabId) {
-      console.log('[GameMapQuizScreen] ❌ No selectedSubject.id, using sample words');
-      setVocabularyWords([]);
-      setIsLoadingWords(false);
-      return;
-    }
-
-    const version = vocabularyVersionRef.current[vocabId] || 0;
-    const loadKey = `${vocabId}:${version}`;
-    const cachedWords = vocabularyCacheRef.current[vocabId];
-
-    if (cachedWords && loadedVersionRef.current[vocabId] === version) {
-      setVocabularyWords(cachedWords);
-      setIsLoadingWords(false);
-      return;
-    }
-
-    const reusePromise = requestPromisesRef.current[loadKey];
-    if (reusePromise) {
-      setIsLoadingWords(true);
-      let isStale = false;
-      reusePromise
-        .then((words) => {
-          if (!isStale) {
-            setVocabularyWords(words);
-            setIsLoadingWords(false);
-          }
-        })
-        .catch((error) => {
-          if (!isStale) {
-            console.error('[GameMapQuizScreen] ❌ Error loading vocabulary words:', error);
-            setIsLoadingWords(false);
-          }
-        });
-      return () => {
-        isStale = true;
-      };
-    }
-
-    if (loadingVocabularyIdRef.current === loadKey) {
-      return;
-    }
-
-    let isCancelled = false;
-    const fetchPromise = (async () => {
-      const isSpecialVocabulary = ['starred', 'graveyard', 'wrong-answers'].includes(vocabId);
-
-      let endpoint = '';
-      if (isSpecialVocabulary) {
-        endpoint = `https://${projectId}.supabase.co/functions/v1/server/${vocabId}`;
-      } else {
-        endpoint = `https://${projectId}.supabase.co/functions/v1/server/user-vocabularies/${vocabId}`;
-      }
-
-      const authToken = getAuthToken ? getAuthToken() : publicAnonKey;
-      const response = await fetch(endpoint, {
-        headers: {
-          'Authorization': `Bearer ${authToken}`
-        }
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(errorText || 'Failed to load vocabulary words');
-      }
-
-      const data = await response.json();
-      console.log('[GameMapQuizScreen] 📦 API response:', data);
-      const allWords: any[] = [];
-
-      if (isSpecialVocabulary) {
-        if (data.words && Array.isArray(data.words)) {
-          allWords.push(...data.words);
-        } else if (Array.isArray(data)) {
-          allWords.push(...data);
-        }
-      } else {
-        if (data.units && Array.isArray(data.units)) {
-          data.units.forEach((unit: any) => {
-            if (unit.words && Array.isArray(unit.words)) {
-              allWords.push(...unit.words);
-            }
-          });
-        }
-      }
-
-      console.log(`[GameMapQuizScreen] ✅ Loaded ${allWords.length} words from vocabulary ${vocabId}`);
-      console.log('[GameMapQuizScreen] 📝 First word:', allWords[0]);
-      vocabularyCacheRef.current[vocabId] = allWords;
-      loadedVersionRef.current[vocabId] = version;
-      return allWords;
-    })();
-
-    requestPromisesRef.current[loadKey] = fetchPromise;
-    loadingVocabularyIdRef.current = loadKey;
-    setIsLoadingWords(true);
-    console.log('[GameMapQuizScreen] 📚 Loading words for vocabulary ID:', vocabId);
-
-    fetchPromise
-      .then((words) => {
-        if (!isCancelled) {
-          setVocabularyWords(words);
-        }
-      })
-      .catch((error) => {
-        if (!isCancelled) {
-          console.error('[GameMapQuizScreen] ❌ Error loading vocabulary words:', error);
-        }
-      })
-      .finally(() => {
-        if (!isCancelled) {
-          setIsLoadingWords(false);
-        }
-        if (loadingVocabularyIdRef.current === loadKey) {
-          loadingVocabularyIdRef.current = null;
-        }
-        delete requestPromisesRef.current[loadKey];
-      });
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [propsVocabularyWords, selectedSubject?.id, getAuthToken, refreshCounter]);
+  // vocabularyWords are now loaded via useVocabularyLoader hook
 
 
   useEffect(() => {
@@ -422,7 +255,7 @@ export function GameMapQuizScreen({
           return;
         }
       }
-      setSelectedQuizMode(mode);
+      setQuizMode(mode);
       startQuiz(stageId, mode);
       return;
     }
@@ -431,7 +264,7 @@ export function GameMapQuizScreen({
     setShowQuizModeSelector(true);
   };
 
-  const startQuiz = (stageId: number, mode: 'normal' | 'match' | 'game') => {
+  const startQuiz = (stageId: number, mode: 'normal' | 'match' | 'game' | 'fill-in', overrideFillInType?: 'kr-to-en' | 'en-to-kr') => {
     if (mode === 'match') {
       const poolLength = getMatchWordsForStage(stageId).length;
       if (poolLength < MIN_MATCH_WORDS) {
@@ -440,7 +273,7 @@ export function GameMapQuizScreen({
       }
     }
 
-    if (mode !== 'match') {
+    if (mode !== 'match' && mode !== 'fill-in') {
       const stageQuestions = questionBank[stageId] || [];
       if (!stageQuestions.length) {
         if (vocabularyWords.length > 0) {
@@ -451,6 +284,53 @@ export function GameMapQuizScreen({
       }
     }
 
+    // Fill-in mode: generate questions on the fly based on fillInType
+    if (mode === 'fill-in') {
+      if (!filteredWords.length) {
+        alert('주관식 퀴즈를 만들 단어가 부족해요.');
+        return;
+      }
+
+      const normalizedWords = filteredWords
+        .map(normalizeWordForQuiz)
+        .filter((word): word is NormalizedWord => !!word);
+
+      if (!normalizedWords.length) {
+        alert('주관식 퀴즈를 만들 단어가 부족해요.');
+        return;
+      }
+
+      // Use overrideFillInType if provided, otherwise use fillInType from store
+      const currentFillInType = overrideFillInType || fillInType;
+
+      console.log('Normalized words for fill-in:', normalizedWords);
+      console.log('Fill-in type:', currentFillInType);
+
+      let fillInQuestions: Question[] = [];
+      if (currentFillInType === 'kr-to-en') {
+        // KR → EN: 뜻 보고 단어 쓰기
+        fillInQuestions = generateFillInWordQuestions(normalizedWords, 10);
+      } else if (currentFillInType === 'en-to-kr') {
+        // EN → KR: 단어 보고 뜻 쓰기 (AI grading)
+        fillInQuestions = generateFillInMeaningQuestions(normalizedWords, 10);
+      }
+
+      console.log('Generated fill-in questions:', fillInQuestions);
+
+      if (!fillInQuestions.length) {
+        alert('주관식 퀴즈를 만들 수 없어요. 단어 데이터를 확인해주세요.');
+        return;
+      }
+
+      // Update fillInType in store if override was provided
+      if (overrideFillInType) {
+        setFillInType(overrideFillInType);
+      }
+
+      // Store fill-in questions for this stage
+      updateShuffledQuestionsForStage(stageId, fillInQuestions);
+    }
+
     setCurrentStage(stageId);
     setCurrentQuestion(0);
     setStageScore(0);
@@ -459,11 +339,15 @@ export function GameMapQuizScreen({
     setLastAnswerCorrect(null);
     setStartTime(new Date());
     setCorrectAnswersCount(0);
-    setSelectedQuizMode(mode);
+    setQuizMode(mode);
     setShowQuizModeSelector(false);
     setPendingStageId(null);
     setShowSentenceTranslation(false);
-    shuffleStageQuestions(stageId, questionBank);
+
+    // Shuffle questions for normal mode
+    if (mode !== 'fill-in') {
+      shuffleStageQuestions(stageId, questionBank);
+    }
 
     // Set game type once when starting (not on every render)
     if (mode === 'match') {
@@ -507,11 +391,10 @@ export function GameMapQuizScreen({
     if (!question) return;
 
     if (question.type === 'multi-select') {
-      setSelectedAnswers((prev) =>
-        prev.includes(answerIndex)
-          ? prev.filter((value) => value !== answerIndex)
-          : [...prev, answerIndex]
-      );
+      const newAnswers = selectedAnswers.includes(answerIndex)
+        ? selectedAnswers.filter((value) => value !== answerIndex)
+        : [...selectedAnswers, answerIndex];
+      setSelectedAnswers(newAnswers);
     } else {
       const nextSelection = [answerIndex];
       setSelectedAnswers(nextSelection);
@@ -522,7 +405,7 @@ export function GameMapQuizScreen({
     }
   };
 
-  const handleSubmitAnswer = (overrideAnswers?: number[]) => {
+  const handleSubmitAnswer = async (overrideAnswers?: number[] | string) => {
     if (!currentStage) return;
 
     const questions =
@@ -530,29 +413,93 @@ export function GameMapQuizScreen({
       questionBank[currentStage] ||
       [];
     const currentQ = questions[currentQuestion];
+
+    // Handle fill-in questions (string answer)
+    if (typeof overrideAnswers === 'string') {
+      const userAnswer = overrideAnswers.trim();
+      if (!userAnswer || !currentQ) return;
+
+      let isCorrect = false;
+
+      if (currentQ.type === 'fill-in-word') {
+        // KR → EN: Exact match (case-insensitive)
+        isCorrect = userAnswer.toLowerCase() === (currentQ.correctAnswer as string).toLowerCase();
+      } else if (currentQ.type === 'fill-in-meaning') {
+        // EN → KR: Use Gemini API for semantic comparison
+        const englishWord = currentQ.text;
+        const correctAnswer = currentQ.correctAnswer as string;
+
+        try {
+          const gradingResult = await gradeFillInAnswer(englishWord, correctAnswer, userAnswer);
+          isCorrect = gradingResult.isCorrect;
+
+          // Store feedback for display
+          setAiFeedback(gradingResult.feedback);
+          console.log('Gemini feedback:', gradingResult.feedback);
+        } catch (error) {
+          console.error('Grading error, falling back to simple matching:', error);
+          // Fallback to simple string matching
+          isCorrect = userAnswer.includes(correctAnswer) || correctAnswer.includes(userAnswer);
+          setAiFeedback('채점 중 오류가 발생했습니다.');
+        }
+      }
+
+      setShowFeedback(true);
+      setLastAnswerCorrect(isCorrect);
+
+      if (isCorrect) {
+        incrementStageScore(1);
+        incrementCorrectAnswers();
+      } else {
+        const wrongId = currentQ.word?.id || currentQ.word?.term;
+        if (onWrongAnswer && wrongId) {
+          onWrongAnswer(wrongId);
+        }
+      }
+
+      setTimeout(() => {
+        if (currentQuestion < questions.length - 1) {
+          setCurrentQuestion(currentQuestion + 1);
+          setSelectedAnswers([]);
+          setShowFeedback(false);
+          setLastAnswerCorrect(null);
+          setAiFeedback(null);
+        } else {
+          setSelectedAnswers([]);
+          setShowFeedback(false);
+          setLastAnswerCorrect(null);
+          setAiFeedback(null);
+          completeStage();
+        }
+      }, 2500);
+
+      return;
+    }
+
+    // Handle multiple choice questions (number[] answer)
     const answers = overrideAnswers ?? selectedAnswers;
     if (!currentQ || answers.length === 0) return;
 
     let isCorrect = false;
-    if (currentQ.type === 'multi-select' && currentQ.correctAnswers) {
+    if (currentQ.type === 'multi-select' && (currentQ as any).correctAnswers) {
       const sortedSelected = [...answers].sort();
-      const sortedCorrect = [...currentQ.correctAnswers].sort();
+      const sortedCorrect = [...(currentQ as any).correctAnswers].sort();
       isCorrect =
         sortedSelected.length === sortedCorrect.length &&
         sortedSelected.every((value, index) => value === sortedCorrect[index]);
     } else if (typeof currentQ.correctAnswer === 'number') {
       isCorrect = answers[0] === currentQ.correctAnswer;
     }
-    
+
     setShowFeedback(true);
     setLastAnswerCorrect(isCorrect);
-    
+
     if (isCorrect) {
-      setStageScore(prev => prev + 1);
-      setCorrectAnswersCount(prev => prev + 1);
+      incrementStageScore(1);
+      incrementCorrectAnswers();
     } else {
       // 틀린 답변 추적 - 질문 ID를 단어 ID로 사용
-      const wrongId = currentQ.wordId || currentQ.word;
+      const wrongId = (currentQ as any).wordId || (currentQ as any).word;
       if (onWrongAnswer && wrongId) {
         onWrongAnswer(wrongId);
       }
@@ -560,7 +507,7 @@ export function GameMapQuizScreen({
 
     setTimeout(() => {
       if (currentQuestion < questions.length - 1) {
-        setCurrentQuestion(prev => prev + 1);
+        setCurrentQuestion(currentQuestion + 1);
         setSelectedAnswers([]);
         setShowFeedback(false);
         setLastAnswerCorrect(null);
@@ -577,30 +524,24 @@ export function GameMapQuizScreen({
 
   const completeStage = () => {
     if (!currentStage) return;
-    
+
     const stage = stages.find(s => s.id === currentStage);
     if (!stage) return;
 
     // 현재 모드를 완료로 표시
-    setCompletedModes(prev => {
-      const updated = { ...prev };
-      if (!updated[currentStage]) {
-        updated[currentStage] = new Set();
-      }
-      updated[currentStage].add(selectedQuizMode);
-      return updated;
-    });
+    addCompletedMode(currentStage, selectedQuizMode);
 
     // Mark current stage as completed (하나라도 완료하면 completed)
-    setStages(prev => prev.map(s => {
+    const updatedStages = stages.map(s => {
       if (s.id === currentStage) {
         return { ...s, status: 'completed' as const };
       }
       if (s.id === currentStage + 1) {
-        return { ...s, status: 'current' as const };
+        return { ...s, status: 'unlocked' as const };
       }
       return s;
-    }));
+    });
+    setStages(updatedStages);
 
     // Auto-advance to next stage or return to map
     if (currentStage === 5) {
@@ -676,7 +617,11 @@ export function GameMapQuizScreen({
           words={matchWords}
           matchGameType={matchGameType || 'card-match-word'}
           onBack={resetToMap}
-          onBackToHome={onBackToHome}
+          onBackToHome={onBackToHome ? () => {
+            resetQuiz();
+            setActiveTab('word-list');
+            onBackToHome();
+          } : undefined}
           onComplete={(_, correctCount) => handleVocabularyGameCompletion(correctCount, stage)}
           onWrongAnswer={onWrongAnswer}
           stage={stage}
@@ -726,16 +671,21 @@ export function GameMapQuizScreen({
         selectedAnswers={selectedAnswers}
         showFeedback={showFeedback}
         lastAnswerCorrect={lastAnswerCorrect}
+        aiFeedback={aiFeedback}
         isMultiSelect={isMultiSelect}
         isSentenceQuestion={Boolean(isSentenceQuestion)}
         sentenceTranslationVisible={showSentenceTranslation}
         onBack={resetToMap}
-        onBackToHome={onBackToHome}
+        onBackToHome={onBackToHome ? () => {
+          resetQuiz();
+          setActiveTab('word-list');
+          onBackToHome();
+        } : undefined}
         onAnswerSelect={handleAnswerSelect}
-        onToggleSentenceTranslation={() => setShowSentenceTranslation((prev) => !prev)}
+        onToggleSentenceTranslation={() => setShowSentenceTranslation(!showSentenceTranslation)}
         onSubmitAnswer={handleSubmitAnswer}
         journeyName={journeyName}
-        wordCount={vocabularyWords.length}
+        wordCount={filteredWords.length}
         isStarredVocabulary={isStarredVocabulary}
       />
     );
@@ -756,7 +706,7 @@ export function GameMapQuizScreen({
                 {isStarredVocabulary ? '⭐ Starred Words' : journeyName}
               </h1>
               <p style={{ fontSize: '12px', fontWeight: 500, color: isStarredVocabulary ? '#D97706' : '#A78BFA' }}>
-                {vocabularyWords.length}개의 단어
+                {filteredWords.length}개의 단어
               </p>
             </div>
 
@@ -764,7 +714,11 @@ export function GameMapQuizScreen({
             {onBackToHome ? (
               <motion.button
                 whileTap={{ scale: 0.95 }}
-                onClick={onBackToHome}
+                onClick={() => {
+                  resetQuiz();
+                  setActiveTab('word-list');
+                  onBackToHome();
+                }}
                 className="w-10 h-10 bg-white/90 backdrop-blur-md rounded-full flex items-center justify-center shadow-card"
               >
                 <Home className="w-5 h-5" style={{ color: isStarredVocabulary ? '#78350F' : '#5B21B6' }} />
@@ -1177,7 +1131,7 @@ export function GameMapQuizScreen({
               <FlashcardScreen
                 onBack={() => setActiveTab('word-list')}
                 onBackToHome={onBackToHome}
-                vocabularyWords={vocabularyWords}
+                vocabularyWords={filteredWords}
                 starredWordIds={starredWordIds}
                 graveyardWordIds={graveyardWordIds}
                 vocabularyId={vocabularyId}
@@ -1339,6 +1293,56 @@ export function GameMapQuizScreen({
                         </motion.button>
                       );
                     })()}
+
+                    {/* Fill-in Mode */}
+                    {modalAvailableModes.includes('normal') && (
+                      <motion.button
+                        whileTap={{ scale: 0.95 }}
+                        onClick={() => {
+                          if (!pendingStageId) return;
+                          // Close quiz mode selector and show fill-in submode selector
+                          setShowQuizModeSelector(false);
+                          setQuizMode('fill-in');
+                        }}
+                        className={`w-full p-4 rounded-2xl shadow-md flex items-center justify-between ${
+                          pendingStageId && completedModes[pendingStageId]?.has('fill-in')
+                            ? 'bg-gradient-to-br from-emerald-400 to-emerald-600 text-white border-2 border-emerald-300'
+                            : 'bg-white border-2 border-[#A78BFA]'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${
+                            pendingStageId && completedModes[pendingStageId]?.has('fill-in')
+                              ? 'bg-white/20'
+                              : 'bg-[#EDE9FE]'
+                          }`}>
+                            <PenTool className={`w-5 h-5 ${
+                              pendingStageId && completedModes[pendingStageId]?.has('fill-in')
+                                ? 'text-white'
+                                : 'text-[#7C3AED]'
+                            }`} />
+                          </div>
+                          <div className="text-left">
+                            <div className="text-sm" style={{
+                              fontWeight: 700,
+                              color: pendingStageId && completedModes[pendingStageId]?.has('fill-in') ? '#fff' : '#491B6D'
+                            }}>
+                              Fill-in
+                            </div>
+                            <div className="text-xs" style={{
+                              color: pendingStageId && completedModes[pendingStageId]?.has('fill-in') ? 'rgba(255,255,255,0.8)' : '#8B5CF6'
+                            }}>
+                              주관식 타이핑 퀴즈
+                            </div>
+                          </div>
+                        </div>
+                        {pendingStageId && completedModes[pendingStageId]?.has('fill-in') ? (
+                          <CheckCircle className="w-5 h-5 text-white" />
+                        ) : (
+                          <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
+                        )}
+                      </motion.button>
+                    )}
                   </div>
                 );
               })()}
@@ -1352,6 +1356,92 @@ export function GameMapQuizScreen({
                 className="mt-4 w-full p-3 bg-gray-100 rounded-xl"
               >
                 <span className="text-sm" style={{ fontWeight: 600, color: '#6B7280' }}>취소</span>
+              </motion.button>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Fill-in Submode Selector Modal */}
+      <AnimatePresence>
+        {!showQuizModeSelector && selectedQuizMode === 'fill-in' && pendingStageId && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/30 backdrop-blur-sm flex items-center justify-center z-50 p-4"
+            onClick={() => {
+              setPendingStageId(null);
+              setQuizMode('normal');
+            }}
+          >
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0, y: 20 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.8, opacity: 0, y: 20 }}
+              transition={{ type: "spring", damping: 20 }}
+              className="bg-white/95 backdrop-blur-xl rounded-3xl p-6 shadow-2xl border-2 border-white/60 max-w-sm w-full"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="text-center mb-6">
+                <h3 className="text-lg mb-1" style={{ fontWeight: 700, color: '#491B6D' }}>
+                  주관식 퀴즈 유형
+                </h3>
+                <p className="text-xs" style={{ color: '#8B5CF6' }}>
+                  원하는 방향을 선택하세요
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                {/* KR -> EN (뜻 보고 단어 쓰기) */}
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    startQuiz(pendingStageId, 'fill-in', 'kr-to-en');
+                  }}
+                  className="w-full p-4 rounded-2xl shadow-md flex items-center justify-between bg-gradient-to-br from-[#7C3AED] to-[#A78BFA] text-white"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-white/20 rounded-xl flex items-center justify-center">
+                      <BookOpen className="w-5 h-5" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm" style={{ fontWeight: 700 }}>KR → EN</div>
+                      <div className="text-xs opacity-80">뜻 보고 단어 쓰기</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5" />
+                </motion.button>
+
+                {/* EN -> KR (단어 보고 뜻 쓰기) */}
+                <motion.button
+                  whileTap={{ scale: 0.95 }}
+                  onClick={() => {
+                    startQuiz(pendingStageId, 'fill-in', 'en-to-kr');
+                  }}
+                  className="w-full p-4 rounded-2xl shadow-md flex items-center justify-between bg-white border-2 border-[#A78BFA]"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-[#EDE9FE] rounded-xl flex items-center justify-center">
+                      <PenTool className="w-5 h-5 text-[#7C3AED]" />
+                    </div>
+                    <div className="text-left">
+                      <div className="text-sm" style={{ fontWeight: 700, color: '#491B6D' }}>EN → KR</div>
+                      <div className="text-xs" style={{ color: '#8B5CF6' }}>단어 보고 뜻 쓰기 (AI 채점)</div>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-5 h-5 text-[#7C3AED]" />
+                </motion.button>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.95 }}
+                onClick={() => {
+                  setQuizMode('normal');
+                }}
+                className="mt-4 w-full p-3 bg-gray-100 rounded-xl"
+              >
+                <span className="text-sm" style={{ fontWeight: 600, color: '#6B7280' }}>뒤로</span>
               </motion.button>
             </motion.div>
           </motion.div>

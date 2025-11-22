@@ -1,6 +1,7 @@
 import { motion, AnimatePresence } from 'motion/react';
 import { Home, CheckCircle, Circle } from 'lucide-react';
 import { BackButton } from '../BackButton';
+import { FillInQuestionUI } from './FillInQuestionUI';
 import type { ComponentType } from 'react';
 import type { Stage, Question } from '../GameMapQuizScreen';
 
@@ -13,6 +14,7 @@ interface NormalQuizLayoutProps {
   selectedAnswers: number[];
   showFeedback: boolean;
   lastAnswerCorrect: boolean | null;
+  aiFeedback?: string | null;
   isMultiSelect: boolean;
   isSentenceQuestion: boolean;
   sentenceTranslationVisible: boolean;
@@ -22,7 +24,7 @@ interface NormalQuizLayoutProps {
   onBackToHome?: () => void;
   onAnswerSelect: (optionIndex: number) => void;
   onToggleSentenceTranslation: () => void;
-  onSubmitAnswer: () => void;
+  onSubmitAnswer: (userAnswer?: string) => void;
   journeyName: string;
   wordCount: number;
   isStarredVocabulary: boolean;
@@ -37,6 +39,7 @@ export function NormalQuizLayout({
   selectedAnswers,
   showFeedback,
   lastAnswerCorrect,
+  aiFeedback,
   isMultiSelect,
   isSentenceQuestion,
   sentenceTranslationVisible,
@@ -53,6 +56,7 @@ export function NormalQuizLayout({
 }: NormalQuizLayoutProps) {
   const headerAccent = isStarredVocabulary ? '#78350F' : '#091A7A';
   const subAccent = isStarredVocabulary ? '#D97706' : '#7C3AED';
+  const isFillInQuestion = question.type === 'fill-in-word' || question.type === 'fill-in-meaning';
 
   return (
     <div className="h-full bg-transparent overflow-y-auto">
@@ -138,17 +142,17 @@ export function NormalQuizLayout({
               Question {currentQuestionIndex + 1}
             </p>
             <h2 className="text-base font-semibold text-[#091A7A] text-center leading-relaxed">
-              {question.question}
+              {question.text || (question as any).question}
             </h2>
 
-            {isSentenceQuestion && question.sentenceData && (
+            {isSentenceQuestion && (question as any).sentenceData && (
               <div className="space-y-2 text-center">
                 <p className="text-sm font-semibold text-[#1E1B4B] leading-relaxed">
-                  {sentenceTranslationVisible && question.sentenceData.translation
-                    ? question.sentenceData.translation
-                    : question.sentenceData.english}
+                  {sentenceTranslationVisible && (question as any).sentenceData.translation
+                    ? (question as any).sentenceData.translation
+                    : (question as any).sentenceData.english}
                 </p>
-                {question.sentenceData.translation && (
+                {(question as any).sentenceData.translation && (
                   <button
                     onClick={onToggleSentenceTranslation}
                     className="mx-auto px-3 py-1.5 rounded-full bg-[#F4F4FF] text-[#5B21B6] text-xs font-semibold shadow-inner"
@@ -161,12 +165,26 @@ export function NormalQuizLayout({
           </div>
         </motion.div>
 
-        <div className={isMultiSelect ? 'grid grid-cols-2 gap-3' : 'space-y-3'}>
-          {question.options.map((option, index) => {
-            const isChosen = selectedAnswers.includes(index);
-            const isCorrectOption =
-              question.correctAnswers?.includes(index) ||
-              (typeof question.correctAnswer === 'number' && question.correctAnswer === index);
+        {/* Fill-in Question UI */}
+        {isFillInQuestion && (
+          <FillInQuestionUI
+            question={question as any}
+            showFeedback={showFeedback}
+            lastAnswerCorrect={lastAnswerCorrect}
+            aiFeedback={aiFeedback}
+            onSubmitAnswer={(userAnswer) => onSubmitAnswer(userAnswer)}
+          />
+        )}
+
+        {/* Multiple Choice Options */}
+        {!isFillInQuestion && (
+          <>
+            <div className={isMultiSelect ? 'grid grid-cols-2 gap-3' : 'space-y-3'}>
+              {question.options && question.options.length > 0 && question.options.map((option, index) => {
+              const isChosen = selectedAnswers.includes(index);
+              const isCorrectOption =
+                (question as any).correctAnswers?.includes(index) ||
+                (typeof question.correctAnswer === 'number' && question.correctAnswer === index);
 
             let cardStyle = 'bg-white/95 border-white/60';
             let textColor = 'text-[#091A7A]';
@@ -210,65 +228,67 @@ export function NormalQuizLayout({
                   )}
                 </div>
               </motion.button>
-            );
-          })}
-        </div>
+              );
+            })}
+            </div>
 
-        <AnimatePresence>
-          {showFeedback && (
+            <AnimatePresence>
+            {showFeedback && (
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -12 }}
+                transition={{ delay: 0.2 }}
+                className={`p-5 rounded-2xl backdrop-blur-xl border shadow-card ${
+                  lastAnswerCorrect ? 'bg-emerald-50/95 border-emerald-200/60' : 'bg-red-50/95 border-red-200/60'
+                }`}
+              >
+                <div className="flex items-start gap-3">
+                  <div
+                    className={`w-8 h-8 rounded-xl flex items-center justify-center ${
+                      lastAnswerCorrect ? 'bg-emerald-100' : 'bg-red-100'
+                    }`}
+                  >
+                    {lastAnswerCorrect ? (
+                      <CheckCircle className="w-4 h-4 text-emerald-600" />
+                    ) : (
+                      <Circle className="w-4 h-4 text-red-600" />
+                    )}
+                  </div>
+                  <div className="flex-1">
+                    <h3 className={`font-semibold text-sm mb-1 ${
+                      lastAnswerCorrect ? 'text-emerald-700' : 'text-red-700'
+                    }`}>
+                      {lastAnswerCorrect ? '정답이에요!' : '다시 한번 생각해봐요'}
+                    </h3>
+                    <p className="text-sm text-gray-600 leading-relaxed">{question.explanation}</p>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {!showFeedback && isMultiSelect && (
             <motion.div
-              initial={{ opacity: 0, y: 12 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -12 }}
-              transition={{ delay: 0.2 }}
-              className={`p-5 rounded-2xl backdrop-blur-xl border shadow-card ${
-                lastAnswerCorrect ? 'bg-emerald-50/95 border-emerald-200/60' : 'bg-red-50/95 border-red-200/60'
-              }`}
+              transition={{ delay: 0.35 }}
+              className="pt-1"
             >
-              <div className="flex items-start gap-3">
-                <div
-                  className={`w-8 h-8 rounded-xl flex items-center justify-center ${
-                    lastAnswerCorrect ? 'bg-emerald-100' : 'bg-red-100'
-                  }`}
-                >
-                  {lastAnswerCorrect ? (
-                    <CheckCircle className="w-4 h-4 text-emerald-600" />
-                  ) : (
-                    <Circle className="w-4 h-4 text-red-600" />
-                  )}
-                </div>
-                <div className="flex-1">
-                  <h3 className={`font-semibold text-sm mb-1 ${
-                    lastAnswerCorrect ? 'text-emerald-700' : 'text-red-700'
-                  }`}>
-                    {lastAnswerCorrect ? '정답이에요!' : '다시 한번 생각해봐요'}
-                  </h3>
-                  <p className="text-sm text-gray-600 leading-relaxed">{question.explanation}</p>
-                </div>
-              </div>
+              <button
+                onClick={() => onSubmitAnswer()}
+                disabled={!selectedAnswers.length}
+                className={`w-full py-3 rounded-2xl font-semibold shadow-card border transition-all duration-300 ${
+                  selectedAnswers.length
+                    ? 'bg-gradient-to-r from-[#7C3AED] to-[#A78BFA] text-white border-transparent'
+                    : 'bg-white/70 text-gray-400 border-gray-200 cursor-not-allowed'
+                }`}
+              >
+                {selectedAnswers.length ? '정답 제출하기' : '답안을 선택하세요'}
+              </button>
             </motion.div>
-          )}
-        </AnimatePresence>
-
-        {!showFeedback && isMultiSelect && (
-          <motion.div
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.35 }}
-            className="pt-1"
-          >
-            <button
-              onClick={() => onSubmitAnswer()}
-              disabled={!selectedAnswers.length}
-              className={`w-full py-3 rounded-2xl font-semibold shadow-card border transition-all duration-300 ${
-                selectedAnswers.length
-                  ? 'bg-gradient-to-r from-[#7C3AED] to-[#A78BFA] text-white border-transparent'
-                  : 'bg-white/70 text-gray-400 border-gray-200 cursor-not-allowed'
-              }`}
-            >
-              {selectedAnswers.length ? '정답 제출하기' : '답안을 선택하세요'}
-            </button>
-          </motion.div>
+            )}
+          </>
         )}
       </div>
     </div>

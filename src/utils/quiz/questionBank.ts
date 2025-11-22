@@ -16,15 +16,18 @@ export const buildQuestionBank = (words: any[]): Record<number, Question[]> | nu
     .filter((word): word is NormalizedWord => !!word);
   if (!normalizedWords.length) return null;
 
-  const meaningQuestions = generateMeaningQuestions(normalizedWords, 20);
+  // Generate questions based on the number of words available
+  const wordCount = normalizedWords.length;
+
+  const meaningQuestions = generateMeaningQuestions(normalizedWords, wordCount);
   if (!meaningQuestions.length) return null;
 
-  const derivativeQuestions = generateDerivativeQuestions(normalizedWords, 12);
-  const synAntQuestions = generateSynAntQuestions(normalizedWords, 12);
-  const sentenceQuestions = generateSentenceQuestions(normalizedWords, 12);
+  const derivativeQuestions = generateDerivativeQuestions(normalizedWords, wordCount);
+  const synAntQuestions = generateSynAntQuestions(normalizedWords, wordCount);
+  const sentenceQuestions = generateSentenceQuestions(normalizedWords, wordCount);
   const allInOneQuestions = generateAllInOneQuestions(
     { meaningQuestions, derivativeQuestions, synAntQuestions, sentenceQuestions },
-    30
+    wordCount
   );
 
   return {

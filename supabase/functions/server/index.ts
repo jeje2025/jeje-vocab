@@ -1270,10 +1270,39 @@ app.post("/wrong-answers/:wordId", async (c) => {
     if (!userId) return unauthorizedResponse(c);
     const wordId = c.req.param('wordId');
     const supabase = getSupabaseClient();
-    const { data, error } = await supabase.from('user_words').update({ is_wrong_answer: true }).eq('id', wordId).eq('user_id', userId).select().single();
-    if (error) throw error;
+
+    // Try to find by id first, then fall back to term-based lookup
+    let query = supabase
+      .from('user_words')
+      .update({ is_wrong_answer: true })
+      .eq('user_id', userId);
+
+    // Check if wordId is a UUID (database id) or a term identifier
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(wordId);
+
+    if (isUUID) {
+      query = query.eq('id', wordId);
+    } else {
+      // It's a term-based identifier, need to parse it
+      // Format: "term" or "term-derivative-N"
+      const parts = wordId.split('-derivative-');
+      const term = parts[0];
+      query = query.eq('term', term);
+
+      if (parts.length > 1) {
+        const derivativeIndex = parseInt(parts[1]);
+        query = query.eq('derivative_index', derivativeIndex);
+      }
+    }
+
+    const { data, error } = await query.select().single();
+    if (error) {
+      console.error('❌ Error marking word as wrong answer:', error);
+      throw error;
+    }
     return c.json({ word: data });
   } catch (error) {
+    console.error('❌ Error in POST /wrong-answers/:wordId:', error);
     return c.json({ error: String(error) }, 500);
   }
 });
@@ -2000,7 +2029,7 @@ app.post("/ai-chat", async (c) => {
     }
     const apiKey = Deno.env.get('GEMINI_API_KEY');
     if (!apiKey) return c.json({ error: 'GEMINI_API_KEY not configured' }, 500);
-    
+
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
       {
@@ -2014,6 +2043,119 @@ app.post("/ai-chat", async (c) => {
     return c.json({ message });
   } catch (error) {
     return c.json({ error: String(error) }, 500);
+  }
+});
+
+// Grade fill-in answer using Gemini (for EN→KR mode)
+// No authentication required - public endpoint
+app.post("/grade-fill-in-answer", async (c) => {
+  try {
+    // 인증 선택적 - 퀴즈 채점은 인증 없이 사용 가능
+    // const userId = await getUserIdFromAuth(c);
+    // if (!userId) return unauthorizedResponse(c);
+
+    const body = await c.req.json();
+    const { englishWord, correctAnswer, userAnswer } = body;
+
+    if (!englishWord || !correctAnswer || !userAnswer) {
+      return c.json({ error: 'englishWord, correctAnswer, and userAnswer are required' }, 400);
+    }
+
+    const apiKey = Deno.env.get('GEMINI_API_KEY');
+    if (!apiKey) {
+      return c.json({ error: 'GEMINI_API_KEY not configured' }, 500);
+    }
+
+    const prompt = `You are a Korean language grading expert. Your task is to determine if a student's Korean answer correctly translates the given English word.
+
+English Word: "${englishWord}"
+Expected Korean Answer (reference): "${correctAnswer}"
+Student's Korean Answer: "${userAnswer}"
+
+IMPORTANT GRADING CRITERIA:
+1. **Partial credit**: If the English word has MULTIPLE meanings, the student only needs to provide ONE valid meaning to be correct
+   - Example: "citation" can mean "인용", "표창", or "소환장" - ANY of these is correct
+2. The student's answer should convey at least ONE core meaning of the English word
+3. Minor wording differences are acceptable if the meaning is preserved
+4. Synonyms and alternative phrasings are acceptable
+5. Typos should be tolerated (e.g., "ㅎ회복력" vs "회복력")
+6. The expected answer is just a REFERENCE - it's not the only correct answer
+
+RESPONSE FORMAT:
+Return ONLY a JSON object with these fields:
+{
+  "isCorrect": true or false,
+  "feedback": "Brief explanation in Korean (1-2 sentences)"
+}
+
+Examples:
+- English: "citation", Expected: "인용, 표창, 소환장", Student: "인용" → {"isCorrect": true, "feedback": "정답! 'citation'의 여러 뜻 중 '인용'이 맞습니다."}
+- English: "resilience", Expected: "회복력", Student: "회복능력" → {"isCorrect": true, "feedback": "정답! '회복능력'은 '회복력'과 같은 의미입니다."}
+- English: "sophisticated", Expected: "세련된", Student: "복잡한" → {"isCorrect": false, "feedback": "'복잡한'보다는 '세련된', '정교한'이 더 정확한 의미입니다."}
+
+NOW GRADE THE ANSWER:`;
+
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-lite-latest:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            temperature: 0.2, // Low temperature for consistent grading
+            maxOutputTokens: 500,
+          },
+        }),
+      }
+    );
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('❌ Gemini API error:', errorText);
+      return c.json({ error: 'Gemini API request failed', details: errorText }, 500);
+    }
+
+    const geminiData = await response.json();
+    const generatedText = geminiData.candidates?.[0]?.content?.parts?.[0]?.text;
+
+    if (!generatedText) {
+      console.error('❌ No content generated from Gemini:', geminiData);
+      return c.json({ error: 'No content generated' }, 500);
+    }
+
+    // Clean and parse JSON
+    let cleanedText = generatedText.trim();
+    if (cleanedText.startsWith('```json')) {
+      cleanedText = cleanedText.replace(/```json\n?/g, '').replace(/```\n?$/g, '');
+    } else if (cleanedText.startsWith('```')) {
+      cleanedText = cleanedText.replace(/```\n?/g, '').replace(/```\s*$/g, '');
+    }
+    cleanedText = cleanedText.trim();
+
+    let result;
+    try {
+      result = JSON.parse(cleanedText);
+    } catch (parseError) {
+      console.error('❌ Failed to parse Gemini response:', parseError);
+      console.error('Raw response:', cleanedText);
+      // Fallback to simple string matching
+      return c.json({
+        isCorrect: userAnswer.includes(correctAnswer) || correctAnswer.includes(userAnswer),
+        feedback: '채점 결과를 확인할 수 없습니다. 다시 시도해주세요.'
+      });
+    }
+
+    console.log(`✅ Graded answer for "${englishWord}": ${result.isCorrect ? 'Correct' : 'Incorrect'}`);
+    return c.json({
+      isCorrect: result.isCorrect || false,
+      feedback: result.feedback || '채점이 완료되었습니다.'
+    });
+  } catch (error) {
+    console.error('❌ Grading error:', error);
+    return c.json({ error: 'Grading failed', details: String(error) }, 500);
   }
 });
 

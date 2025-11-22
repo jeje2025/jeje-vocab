@@ -165,20 +165,9 @@ export function Header(props: HeaderProps) {
               >
                 {props.userName || '사용자'}님
               </span>
-              <motion.span
-                animate={{
-                  scale: [1, 1.2, 1],
-                  rotate: [0, 10, -10, 0]
-                }}
-                transition={{
-                  duration: 2,
-                  repeat: Infinity,
-                  repeatDelay: 3
-                }}
-                style={{ fontSize: '13px' }}
-              >
+              <span style={{ fontSize: '13px' }}>
                 🔥
-              </motion.span>
+              </span>
             </div>
             
             {/* D-Day Display */}
@@ -198,23 +187,6 @@ export function Header(props: HeaderProps) {
                     boxShadow: '0 6px 20px rgba(73, 27, 109, 0.4), 0 2px 8px rgba(124, 58, 237, 0.3)',
                   }}
                 >
-                  {/* Shine effect */}
-                  <motion.div
-                    className="absolute inset-0"
-                    animate={{
-                      x: ['-100%', '100%']
-                    }}
-                    transition={{
-                      duration: 3,
-                      repeat: Infinity,
-                      repeatDelay: 2,
-                      ease: 'easeInOut'
-                    }}
-                    style={{
-                      background: 'linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent)',
-                    }}
-                  />
-                  
                   <span
                     className="relative"
                     style={{

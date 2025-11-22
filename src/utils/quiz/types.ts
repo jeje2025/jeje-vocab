@@ -1,24 +1,18 @@
-export type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence';
+export type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence' | 'fill-in-word' | 'fill-in-meaning';
 
 export interface Question {
-  id: number;
+  id: string;
+  text: string;
   type: QuestionType;
-  wordId?: string;
-  word?: string;
-  question: string;
   options: string[];
-  correctAnswer?: number;
-  correctAnswers?: number[];
+  correctAnswer: number | number[] | string;
   explanation?: string;
-  sentenceData?: {
-    english: string;
-    translation: string;
-  };
+  word?: any;
 }
 
 export interface NormalizedWord {
   id: string;
-  word: string;
+  term: string;
   meaning: string;
   translation: string;
   example: string;

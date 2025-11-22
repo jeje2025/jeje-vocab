@@ -18,7 +18,9 @@ export {
   generateDerivativeQuestions,
   generateSynAntQuestions,
   generateSentenceQuestions,
-  generateAllInOneQuestions
+  generateAllInOneQuestions,
+  generateFillInWordQuestions,
+  generateFillInMeaningQuestions
 } from './generators';
 
 // Question Bank Builder

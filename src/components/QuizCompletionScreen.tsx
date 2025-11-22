@@ -97,13 +97,13 @@ export function QuizCompletionScreen({
       {[...Array(50)].map((_, i) => (
         <motion.div
           key={i}
-          initial={{ 
-            y: -100, 
+          initial={{
+            y: -100,
             x: Math.random() * window.innerWidth,
             rotate: 0,
             opacity: 1
           }}
-          animate={{ 
+          animate={{
             y: window.innerHeight + 100,
             rotate: 360,
             opacity: 0
