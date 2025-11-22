@@ -181,8 +181,8 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
     items: myOwnVocabularies.map((vocab: any) => ({
       id: vocab.id,
       title: vocab.title,
-      wordCount: vocab.total_words || 0,
-      estimatedTime: `${Math.ceil((vocab.total_words || 0) / 3)} min`,
+      wordCount: vocab.active_words ?? vocab.total_words ?? 0,
+      estimatedTime: `${Math.ceil((vocab.active_words ?? vocab.total_words ?? 0) / 3)} min`,
       isCompleted: false,
       progress: 0
     }))
@@ -209,7 +209,7 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
 
     // Convert to units format
     return Object.entries(categoryGroups).map(([category, vocabs]) => {
-      const totalWords = vocabs.reduce((sum, v) => sum + (v.total_words || 0), 0);
+      const totalWords = vocabs.reduce((sum, v) => sum + (v.active_words ?? v.total_words ?? 0), 0);
 
       return {
         id: `category-${category}`,
@@ -219,9 +219,9 @@ export function VocabularyListScreen({ onBack, onBackToHome, onSelectVocabulary,
         units: vocabs.map((vocab: any) => ({
           id: vocab.id,
           title: vocab.title,
-          wordCount: vocab.total_words || 0,
+          wordCount: vocab.active_words ?? vocab.total_words ?? 0,
           startIndex: 1,
-          endIndex: vocab.total_words || 0
+          endIndex: vocab.active_words ?? vocab.total_words ?? 0
         })),
         isExpanded: sharedVocabExpanded[category] || false,
         vocabularyId: category,

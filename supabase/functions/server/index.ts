@@ -237,7 +237,14 @@ async function handleWordGenerationRequest(c: any) {
       return c.json({ success: false, error: 'words array is required' }, 400);
     }
 
-    const validWords: { word: string; meaning?: string }[] = [];
+    const validWords: {
+      word: string;
+      meaning?: string;
+      synonyms?: string;
+      antonyms?: string;
+      example?: string;
+      translation?: string;
+    }[] = [];
     const invalidWords: any[] = [];
 
     words.forEach((entry: any, index: number) => {
@@ -251,7 +258,11 @@ async function handleWordGenerationRequest(c: any) {
       }
       validWords.push({
         word: entry.word.trim(),
-        meaning: typeof entry.meaning === 'string' ? entry.meaning.trim() : undefined,
+        meaning: typeof entry.meaning === 'string' && entry.meaning.trim() !== '' ? entry.meaning.trim() : undefined,
+        synonyms: typeof entry.synonyms === 'string' && entry.synonyms.trim() !== '' ? entry.synonyms.trim() : undefined,
+        antonyms: typeof entry.antonyms === 'string' && entry.antonyms.trim() !== '' ? entry.antonyms.trim() : undefined,
+        example: typeof entry.example === 'string' && entry.example.trim() !== '' ? entry.example.trim() : undefined,
+        translation: typeof entry.translation === 'string' && entry.translation.trim() !== '' ? entry.translation.trim() : undefined,
       });
     });
 
@@ -267,9 +278,22 @@ async function handleWordGenerationRequest(c: any) {
     // Process all words in a single request (client handles batching)
     console.log(`📦 Processing ${validWords.length} words`);
 
-    const wordList = validWords.map((w, idx) => `${idx + 1}. "${w.word}"${w.meaning ? ` (뜻: ${w.meaning})` : ''}`).join('\n');
+    const wordList = validWords.map((w, idx) => {
+      let line = `${idx + 1}. "${w.word}"`;
+      const userProvided: string[] = [];
+      if (w.meaning) userProvided.push(`뜻: ${w.meaning}`);
+      if (w.synonyms) userProvided.push(`동의어: ${w.synonyms}`);
+      if (w.antonyms) userProvided.push(`반의어: ${w.antonyms}`);
+      if (w.example) userProvided.push(`예문: ${w.example}`);
+      if (w.translation) userProvided.push(`번역: ${w.translation}`);
 
-    const prompt = `You are a professional English vocabulary expert. You will receive a list of English words and generate comprehensive information for each word.
+      if (userProvided.length > 0) {
+        line += ` [사용자 입력: ${userProvided.join(', ')}]`;
+      }
+      return line;
+    }).join('\n');
+
+    const prompt = `You are a professional English vocabulary expert. You will receive a list of English words with some user-provided information. Generate comprehensive information for each word, BUT USE user-provided data when available.
 
 INPUT WORDS:
 ${wordList}
@@ -280,22 +304,22 @@ For EACH word, generate a JSON object with the following fields:
 1. word: The exact word from the input (unchanged)
 2. pronunciation: IPA phonetic notation (example: "/ˈwɜːrd/")
 3. partOfSpeech: Part of speech in Korean (examples: "n.", "v.", "adj.", "adv.")
-4. meaning: Korean meaning (use provided meaning if available, otherwise generate appropriate meaning)
+4. meaning: Korean meaning (use user-provided if available, otherwise generate)
 5. definition: Short English definition in 8-12 words
-6. synonyms: Array of 4-5 English synonym strings (example: ["happy", "joyful", "glad"])
-7. antonyms: Array of 2-3 English antonym strings (example: ["sad", "unhappy"])
+6. synonyms: Array of 4-5 English synonym strings - CONVERT user-provided comma-separated synonyms to array if provided
+7. antonyms: Array of 2-3 English antonym strings - CONVERT user-provided comma-separated antonyms to array if provided
 8. derivatives: Array of 2-3 derivative word objects with format {"word": "string", "meaning": "Korean meaning"}
-9. example: One natural English sentence using the word (12-20 words)
-10. translation: Korean translation of the example sentence that still includes the English word explicitly
+9. example: Use user-provided example if available, otherwise generate a natural English sentence (12-20 words)
+10. translation: Use user-provided translation if available, otherwise translate the example (must include the English word explicitly)
 11. translationHighlight: The Korean word/phrase highlighting the meaning of the English word
-12. etymology: Detailed Korean story (2-3 sentences) explaining the word's historical origin, how its meaning evolved across languages, and any notable cultural or historical context tied to the term
+12. etymology: Detailed Korean story (2-3 sentences) explaining the word's historical origin
 
 CRITICAL REQUIREMENTS:
+- PRESERVE all user-provided data (meaning, synonyms, antonyms, example, translation)
+- Only generate fields that are NOT provided by the user
+- Convert comma-separated synonyms/antonyms to array format (e.g., "happy, joyful" -> ["happy", "joyful"])
 - Return a JSON array with EXACTLY ${validWords.length} objects in the SAME ORDER as the input words
 - Each object must include ALL fields above
-- synonyms/antonyms must be arrays of strings
-- derivatives must be an array of objects with {word, meaning}
-- translation must contain the English word itself (e.g., "그는 항상 resilience(회복력)을 보여준다.")
 - Return ONLY valid JSON (no markdown, no extra commentary)
 
 NOW GENERATE THE JSON ARRAY:`;
@@ -313,7 +337,7 @@ NOW GENERATE THE JSON ARRAY:`;
           }],
           generationConfig: {
             temperature: 0.35,
-            maxOutputTokens: 16384,
+            maxOutputTokens: 65536,
           },
         }),
       }
@@ -417,11 +441,25 @@ NOW GENERATE THE JSON ARRAY:`;
       return c.json({ success: false, error: 'Gemini response is not an array' }, 500);
     }
 
-    const normalizedResults = parsed.map((item: any, index: number) => {
+    // 입력 단어 기준으로 매칭 (Gemini가 누락하거나 중복 생성해도 정확히 입력 개수만큼 반환)
+    const parsedMap = new Map<string, any>();
+    for (const item of parsed) {
+      const wordKey = (item.word || '').toLowerCase().trim();
+      if (wordKey && !parsedMap.has(wordKey)) {
+        parsedMap.set(wordKey, item);
+      }
+    }
+
+    console.log(`📊 Gemini 반환: ${parsed.length}개, 입력 단어: ${validWords.length}개`);
+
+    const normalizedResults = validWords.map((inputWord: any, index: number) => {
+      const wordKey = (inputWord.word || '').toLowerCase().trim();
+      const item = parsedMap.get(wordKey) || parsed[index] || {};
+
       const base = normalizeWordPayload({
         ...item,
-        word: item.word || validWords[index]?.word,
-        meaning: item.meaning || validWords[index]?.meaning,
+        word: inputWord.word, // 항상 입력 단어 사용
+        meaning: item.meaning || inputWord.meaning,
         partOfSpeech: item.partOfSpeech || item.part_of_speech,
         translationHighlight: item.translationHighlight || item.translation_highlight,
       });
@@ -441,7 +479,7 @@ NOW GENERATE THE JSON ARRAY:`;
       };
     });
 
-    console.log(`✅ Completed processing ${normalizedResults.length} words`);
+    console.log(`✅ Completed processing ${normalizedResults.length} words (입력과 동일하게 보정됨)`);
 
     return c.json({
       success: true,
@@ -638,7 +676,7 @@ app.get("/user-vocabularies", async (c) => {
     }
 
     const supabase = getSupabaseClient();
-    
+
     const { data, error } = await supabase
       .from('user_vocabularies')
       .select('*')
@@ -647,8 +685,30 @@ app.get("/user-vocabularies", async (c) => {
 
     if (error) throw error;
 
-    console.log(`📚 Fetched ${data.length} user vocabularies for user ${userId}`);
-    return c.json({ vocabularies: data });
+    // For each vocabulary, calculate active word count (excluding graveyard words)
+    const vocabulariesWithActiveCounts = await Promise.all(
+      data.map(async (vocab) => {
+        const { count, error: countError } = await supabase
+          .from('user_words')
+          .select('*', { count: 'exact', head: true })
+          .eq('vocabulary_id', vocab.id)
+          .eq('user_id', userId)
+          .eq('is_graveyard', false);
+
+        if (countError) {
+          console.error(`❌ Error counting active words for vocab ${vocab.id}:`, countError);
+          return vocab; // Return original vocab on error
+        }
+
+        return {
+          ...vocab,
+          active_words: count ?? vocab.total_words // Fallback to total_words if count fails
+        };
+      })
+    );
+
+    console.log(`📚 Fetched ${vocabulariesWithActiveCounts.length} user vocabularies for user ${userId}`);
+    return c.json({ vocabularies: vocabulariesWithActiveCounts });
   } catch (error) {
     console.error('❌ Error fetching user vocabularies:', error);
     return c.json({ error: String(error) }, 500);
@@ -1311,17 +1371,44 @@ app.put("/admin/shared-vocabularies/:id", async (c) => {
 app.delete("/admin/shared-vocabularies/:id", async (c) => {
   try {
     const id = c.req.param('id');
+    console.log(`🗑️ Attempting to delete vocabulary: ${id}`);
+
     const supabase = getSupabaseClient();
 
-    // First delete all words associated with this vocabulary
-    const { error: wordsError } = await supabase
-      .from('shared_words')
-      .delete()
-      .eq('vocabulary_id', id);
+    // 배치로 단어 삭제 (타임아웃 방지)
+    const BATCH_SIZE = 500;
+    let deletedCount = 0;
 
-    if (wordsError) {
-      console.error('❌ Error deleting words:', wordsError);
-      throw wordsError;
+    while (true) {
+      // 삭제할 단어 ID들 조회
+      const { data: wordsToDelete, error: selectError } = await supabase
+        .from('shared_words')
+        .select('id')
+        .eq('vocabulary_id', id)
+        .limit(BATCH_SIZE);
+
+      if (selectError) {
+        console.error('❌ Error selecting words:', JSON.stringify(selectError));
+        return c.json({ error: selectError.message || 'Failed to select words' }, 500);
+      }
+
+      if (!wordsToDelete || wordsToDelete.length === 0) {
+        break; // 더 이상 삭제할 단어 없음
+      }
+
+      const wordIds = wordsToDelete.map(w => w.id);
+      const { error: deleteError } = await supabase
+        .from('shared_words')
+        .delete()
+        .in('id', wordIds);
+
+      if (deleteError) {
+        console.error('❌ Error deleting words batch:', JSON.stringify(deleteError));
+        return c.json({ error: deleteError.message || 'Failed to delete words' }, 500);
+      }
+
+      deletedCount += wordIds.length;
+      console.log(`🗑️ Deleted ${deletedCount} words so far...`);
     }
 
     // Then delete the vocabulary itself
@@ -1331,15 +1418,15 @@ app.delete("/admin/shared-vocabularies/:id", async (c) => {
       .eq('id', id);
 
     if (vocabError) {
-      console.error('❌ Error deleting vocabulary:', vocabError);
-      throw vocabError;
+      console.error('❌ Error deleting vocabulary:', JSON.stringify(vocabError));
+      return c.json({ error: vocabError.message || 'Failed to delete vocabulary' }, 500);
     }
 
-    console.log(`✅ Deleted vocabulary ${id} and its words`);
+    console.log(`✅ Deleted vocabulary ${id} and ${deletedCount} words`);
     return c.json({ success: true });
-  } catch (error) {
+  } catch (error: any) {
     console.error('❌ Delete error:', error);
-    return c.json({ error: String(error) }, 500);
+    return c.json({ error: error?.message || JSON.stringify(error) || 'Unknown error' }, 500);
   }
 });
 

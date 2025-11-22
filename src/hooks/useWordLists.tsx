@@ -1,5 +1,5 @@
 import { useCallback } from 'react';
-import { useVocabularyStore } from '../store/useVocabularyStore';
+import { useVocabularyStore } from '../stores/useVocabularyStore';
 
 export function useWordLists(getAuthToken: () => string | null) {
   const {

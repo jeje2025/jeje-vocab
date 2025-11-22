@@ -80,6 +80,375 @@ interface GameMapQuizScreenProps {
   isLoading?: boolean;
 }
 
+export interface Stage {
+  id: number;
+  title: string;
+  icon: React.ReactNode;
+  status: 'locked' | 'current' | 'completed';
+  xpReward: number;
+}
+
+type QuestionType = 'multiple-choice' | 'multi-select' | 'sentence';
+
+export interface Question {
+  id: number;
+  type?: QuestionType;
+  question: string;
+  options: string[];
+  correctAnswer?: number;
+  correctAnswers?: number[];
+  explanation?: string;
+  word?: string;
+  wordId?: string;
+  sentenceData?: {
+    english: string;
+    translation?: string;
+  };
+}
+
+interface NormalizedWord {
+  id: string;
+  word: string;
+  meaning: string;
+  translation?: string;
+  example?: string;
+  derivatives: Array<{ word: string; meaning: string }>;
+  synonyms: string[];
+  antonyms: string[];
+}
+
+const parseListField = (value: any): string[] => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => (typeof entry === 'string' ? entry : entry?.word || ''))
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,;/]/)
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+  return [];
+};
+
+const parseDerivativeField = (value: any): Array<{ word: string; meaning: string }> => {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value
+      .map((entry) => {
+        if (typeof entry === 'string') {
+          const [word, meaning] = entry.split(':').map((item) => item.trim());
+          return { word, meaning: meaning || '' };
+        }
+        return {
+          word: entry?.word?.trim() || '',
+          meaning: entry?.meaning?.trim() || ''
+        };
+      })
+      .filter((entry) => entry.word);
+  }
+  if (typeof value === 'string') {
+    return value
+      .split(/[,;]/)
+      .map((segment) => {
+        const [word, meaning] = segment.split(':').map((item) => item.trim());
+        return { word, meaning: meaning || '' };
+      })
+      .filter((entry) => entry.word);
+  }
+  return [];
+};
+
+const normalizeWordForQuiz = (word: any): NormalizedWord | null => {
+  const normalizedWord = word?.word || word?.term;
+  if (!normalizedWord) return null;
+
+  const normalizedId = word?.id || normalizedWord;
+  if (!normalizedId) return null;
+
+  return {
+    id: String(normalizedId),
+    word: normalizedWord,
+    meaning: word?.meaning || word?.translation || '',
+    translation: word?.translation || '',
+    example: word?.example || word?.example_sentence || '',
+    derivatives: parseDerivativeField(word?.derivatives),
+    synonyms: parseListField(word?.synonyms),
+    antonyms: parseListField(word?.antonyms)
+  };
+};
+
+const removeParentheticalHints = (text: string) => {
+  if (!text) return text;
+  return text.replace(/\([^)]*\)/g, '_____');
+};
+
+// Legacy subject questions removed - now using utils/quiz
+
+// Default to math questions if no subject is specified
+
+// Legacy stage configurations removed - now using utils/quiz
+
+const MIN_MATCH_WORDS = 5;
+
+const stageModeAvailability: Record<number, Array<'normal' | 'match' | 'game'>> = {
+  1: ['normal', 'match'],
+  2: ['normal', 'match'],
+  3: ['normal'],
+  4: ['normal'],
+  5: ['normal']
+};
+
+const shuffleArray = <T,>(array: T[]): T[] => {
+  return [...array].sort(() => Math.random() - 0.5);
+};
+
+const generateMeaningQuestions = (words: any[], limit = 20): Question[] => {
+  const candidates = words.filter((word) => word?.id && word?.word && word?.meaning);
+  if (!candidates.length) return [];
+
+  const meaningPool = candidates.map((word) => word.meaning);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    const distractors = shuffleArray(
+      meaningPool.filter((meaning) => meaning && meaning !== word.meaning)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([word.meaning, ...distractors]);
+    questions.push({
+      id: idx++,
+      type: 'multiple-choice',
+      wordId: word.id,
+      word: word.word,
+      question: `${word.word}의 뜻으로 가장 알맞은 것은?`,
+      options,
+      correctAnswer: options.indexOf(word.meaning),
+      explanation: `${word.word}: ${word.meaning}`
+    });
+  });
+
+  return questions;
+};
+
+const generateDerivativeQuestions = (words: any[], limit = 12): Question[] => {
+  const derivativeEntries = words.flatMap((word: any) =>
+    (word?.derivatives || []).map((der: any) => ({
+      wordId: word.id,
+      root: word.word,
+      derivative: der?.word,
+      meaning: der?.meaning
+    }))
+  ).filter((entry) => entry.wordId && entry.derivative && entry.meaning);
+
+  if (!derivativeEntries.length) return [];
+
+  const meaningPool = derivativeEntries.map((entry) => entry.meaning);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(derivativeEntries).forEach((entry) => {
+    if (questions.length >= limit) return;
+    const distractors = shuffleArray(
+      meaningPool.filter((meaning) => meaning && meaning !== entry.meaning)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([entry.meaning, ...distractors]);
+    questions.push({
+      id: idx++,
+      type: 'multiple-choice',
+      wordId: entry.wordId,
+      question: `'${entry.root}'의 파생어 '${entry.derivative}' 뜻은?`,
+      options,
+      correctAnswer: options.indexOf(entry.meaning),
+      explanation: `${entry.derivative} (${entry.root}): ${entry.meaning}`
+    });
+  });
+
+  return questions;
+};
+
+const generateSynAntQuestions = (words: any[], limit = 12): Question[] => {
+  const questions: Question[] = [];
+  const candidates = words.filter(
+    (word) =>
+      word?.id && ((word?.synonyms?.length || 0) >= 2 || (word?.antonyms?.length || 0) >= 2)
+  );
+  const fallbackOptions = words.map((word) => word.word).filter(Boolean);
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    const useSynonym =
+      (word.synonyms?.length || 0) >= 2 &&
+      ((word.antonyms?.length || 0) < 2 || Math.random() > 0.5);
+    const pool = useSynonym ? (word.synonyms || []) : (word.antonyms || []);
+    if (pool.length < 2) return;
+
+    const targetCount = Math.min(pool.length, 3);
+    const requiredCount = Math.max(2, targetCount);
+    const correctWords = shuffleArray(pool).slice(0, requiredCount);
+
+    const distractorPool = shuffleArray(
+      [
+        ...fallbackOptions,
+        ...(words.flatMap((w) => (useSynonym ? w.synonyms || [] : w.antonyms || [])) as string[])
+      ].filter((item) => item && !correctWords.includes(item))
+    );
+
+    const mergedOptions: string[] = [...correctWords];
+    distractorPool.forEach((value) => {
+      if (mergedOptions.length >= 8) return;
+      if (!mergedOptions.includes(value)) mergedOptions.push(value);
+    });
+
+    if (mergedOptions.length < 8) return;
+
+    const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
+    const options = shuffleArray([
+      ...correctWords,
+      ...shuffleArray(distractorOnly).slice(0, 8 - correctWords.length)
+    ]);
+
+    const correctIndexes = options.reduce<number[]>((acc, option, index) => {
+      if (correctWords.includes(option)) acc.push(index);
+      return acc;
+    }, []);
+
+    questions.push({
+      id: questions.length + 1,
+      type: 'multi-select',
+      wordId: word.id,
+      question: `'${word.word}'의 ${useSynonym ? '동의어' : '반의어'}를 모두 선택하세요 (${correctWords.length}개)`,
+      options,
+      correctAnswers: correctIndexes,
+      explanation: `${useSynonym ? '동의어' : '반의어'}: ${correctWords.join(', ')}`
+    });
+  });
+
+  return questions;
+};
+
+const maskSentence = (sentence: string, target: string) => {
+  if (!sentence || !target) return sentence;
+  const regex = new RegExp(target, 'gi');
+  return sentence.replace(regex, '_____');
+};
+
+const generateSentenceQuestions = (words: any[], limit = 12): Question[] => {
+  const candidates = words.filter((word) => word?.id && word?.word && word?.example);
+  if (!candidates.length) return [];
+
+  const wordPool = words.map((word) => word.word).filter(Boolean);
+  let idx = 1;
+  const questions: Question[] = [];
+
+  shuffleArray(candidates).forEach((word) => {
+    if (questions.length >= limit) return;
+    if (!word.word || !word.example) return;
+    const distractors = shuffleArray(
+      wordPool.filter((entry) => entry && entry !== word.word)
+    ).slice(0, 3);
+    if (distractors.length < 3) return;
+    const options = shuffleArray([word.word, ...distractors]);
+
+    questions.push({
+      id: idx++,
+      type: 'sentence',
+      wordId: word.id,
+      question: '빈칸을 채울 알맞은 단어를 고르세요.',
+      options,
+      correctAnswer: options.indexOf(word.word),
+      explanation: `${word.word}: ${word.meaning || ''}`,
+      word: word.word,
+      sentenceData: {
+        english: removeParentheticalHints(maskSentence(word.example, word.word)),
+        translation: word.translation
+          ? removeParentheticalHints(maskSentence(word.translation, word.word))
+          : removeParentheticalHints(word.translation || word.meaning || '')
+      }
+    });
+  });
+
+  return questions;
+};
+
+const cloneQuestion = (question: Question, newId: number): Question => ({
+  ...question,
+  id: newId,
+  options: [...question.options],
+  correctAnswers: question.correctAnswers ? [...question.correctAnswers] : undefined,
+  wordId: question.wordId,
+  sentenceData: question.sentenceData ? { ...question.sentenceData } : undefined
+});
+
+const generateAllInOneQuestions = (
+  sources: {
+    meaningQuestions: Question[];
+    derivativeQuestions: Question[];
+    synAntQuestions: Question[];
+    sentenceQuestions: Question[];
+  },
+  limit = 30
+): Question[] => {
+  const pool = [
+    ...sources.meaningQuestions,
+    ...sources.derivativeQuestions,
+    ...sources.synAntQuestions,
+    ...sources.sentenceQuestions
+  ];
+
+  if (!pool.length) return [];
+
+  const questions: Question[] = [];
+  const shuffled = shuffleArray(pool);
+  let index = 1;
+
+  for (const question of shuffled) {
+    if (questions.length >= limit) break;
+    questions.push(cloneQuestion(question, index++));
+  }
+
+  while (questions.length < limit && sources.meaningQuestions.length) {
+    const fallback = sources.meaningQuestions[questions.length % sources.meaningQuestions.length];
+    questions.push(cloneQuestion(fallback, questions.length + 1));
+  }
+
+  return questions;
+};
+
+const buildQuestionBank = (words: any[]): Record<number, Question[]> | null => {
+  if (!words || !words.length) return null;
+
+  const normalizedWords = words
+    .map(normalizeWordForQuiz)
+    .filter((word): word is NormalizedWord => !!word);
+  if (!normalizedWords.length) return null;
+
+  const meaningQuestions = generateMeaningQuestions(normalizedWords, 20);
+  if (!meaningQuestions.length) return null;
+
+  const derivativeQuestions = generateDerivativeQuestions(normalizedWords, 12);
+  const synAntQuestions = generateSynAntQuestions(normalizedWords, 12);
+  const sentenceQuestions = generateSentenceQuestions(normalizedWords, 12);
+  const allInOneQuestions = generateAllInOneQuestions(
+    { meaningQuestions, derivativeQuestions, synAntQuestions, sentenceQuestions },
+    30
+  );
+
+  return {
+    1: meaningQuestions,
+    2: derivativeQuestions.length ? derivativeQuestions : meaningQuestions,
+    3: synAntQuestions.length ? synAntQuestions : meaningQuestions,
+    4: sentenceQuestions.length ? sentenceQuestions : meaningQuestions,
+    5: allInOneQuestions.length ? allInOneQuestions : meaningQuestions
+  };
+};
+
 export function GameMapQuizScreen({
   onBack,
   onBackToHome,
@@ -210,36 +579,26 @@ export function GameMapQuizScreen({
   const [vocabularyWords, setVocabularyWords] = useState<any[]>([]);
   const [isLoadingWords, setIsLoadingWords] = useState(true);
   const [showSentenceTranslation, setShowSentenceTranslation] = useState(false);
-
-  // Filter out graveyard words before building question bank
-  // BUT only if this is NOT the graveyard vocabulary itself
-  const isGraveyardVocabulary = selectedSubject?.id === 'graveyard';
-  const filteredWords = useMemo(() => {
-    if (!vocabularyWords.length) return [];
-    // Don't filter if this IS the graveyard vocabulary (user wants to quiz graveyard words)
-    if (isGraveyardVocabulary) return vocabularyWords;
-    if (!graveyardWordIds.length) return vocabularyWords;
-
-    const graveyardSet = new Set(graveyardWordIds);
-    return vocabularyWords.filter(word => {
-      const wordId = word?.id || word?.term;
-      return !graveyardSet.has(String(wordId));
-    });
-  }, [vocabularyWords, graveyardWordIds, isGraveyardVocabulary]);
-
   const dynamicQuestionBank = useMemo<Record<number, Question[]> | null>(
-    () => buildQuestionBank(filteredWords),
-    [filteredWords]
+    () => buildQuestionBank(vocabularyWords),
+    [vocabularyWords]
+  );
+  const fallbackQuestionBank = useMemo<Record<number, Question[]>>(
+    () => subjectQuestions[subjectId] || subjectQuestions.math,
+    [subjectId]
   );
   const questionBank = useMemo<Record<number, Question[]>>(() => {
     if (dynamicQuestionBank) {
       return dynamicQuestionBank;
     }
-    // Return empty object if no questions can be generated
-    return {};
-  }, [dynamicQuestionBank]);
+    if (vocabularyWords.length > 0) {
+      // Words are loaded but we couldn't build quizzes (e.g., insufficient data). Avoid sample questions.
+      return {};
+    }
+    return fallbackQuestionBank;
+  }, [dynamicQuestionBank, fallbackQuestionBank, vocabularyWords.length]);
   const matchWordPools = useMemo<Record<number, any[]>>(() => {
-    const derivativePool = filteredWords
+    const derivativePool = vocabularyWords
       .flatMap((word: any) =>
         (word?.derivatives || []).map((der: any, index: number) => ({
           id: `${word.id}-derivative-${index}`,
@@ -250,20 +609,20 @@ export function GameMapQuizScreen({
       .filter((entry) => entry.word && entry.meaning);
 
     return {
-      1: filteredWords,
-      2: derivativePool.length ? derivativePool : filteredWords,
-      3: filteredWords,
-      4: filteredWords,
-      5: filteredWords
+      1: vocabularyWords,
+      2: derivativePool.length ? derivativePool : vocabularyWords,
+      3: vocabularyWords,
+      4: vocabularyWords,
+      5: vocabularyWords
     };
-  }, [filteredWords]);
+  }, [vocabularyWords]);
 
   const getMatchWordsForStage = useCallback(
     (stageId: number) => {
       const pool = matchWordPools[stageId];
-      return pool && pool.length ? pool : filteredWords;
+      return pool && pool.length ? pool : vocabularyWords;
     },
-    [matchWordPools, filteredWords]
+    [matchWordPools, vocabularyWords]
   );
 
   // Load vocabulary words from server

@@ -32,7 +32,7 @@ interface AdminDashboardProps {
   onClose: () => void;
 }
 
-type AdminScreen = 'overview' | 'vocabularies' | 'upload' | 'users' | 'categories';
+type AdminScreen = 'overview' | 'vocabularies' | 'upload' | 'bulk-upload' | 'users' | 'categories';
 
 export function AdminDashboard({ onClose }: AdminDashboardProps) {
   const { getAuthToken } = useAuth();
@@ -83,6 +83,12 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
               onClick={() => setCurrentScreen('upload')}
             />
             <SidebarButton
+              icon={<Upload className="w-5 h-5" />}
+              label="Bulk Upload"
+              active={currentScreen === 'bulk-upload'}
+              onClick={() => setCurrentScreen('bulk-upload')}
+            />
+            <SidebarButton
               icon={<Users className="w-5 h-5" />}
               label="User Management"
               active={currentScreen === 'users'}
@@ -117,6 +123,7 @@ export function AdminDashboard({ onClose }: AdminDashboardProps) {
           {currentScreen === 'overview' && <OverviewScreen />}
           {currentScreen === 'vocabularies' && <VocabularyManagement getAuthToken={getAuthToken} />}
           {currentScreen === 'upload' && <UploadScreen />}
+          {currentScreen === 'bulk-upload' && <BulkUploadScreen />}
           {currentScreen === 'users' && <UsersScreen />}
           {currentScreen === 'categories' && <CategoryManager getAuthToken={getAuthToken} />}
         </div>
@@ -456,6 +463,441 @@ function VocabulariesScreen() {
   );
 }
 
+// Bulk Upload Screen - Auto Split & Save with Table Input
+function BulkUploadScreen() {
+  const { getAuthToken } = useAuth();
+  const [title, setTitle] = useState('');
+  const [category, setCategory] = useState('');
+  const [description, setDescription] = useState('');
+  const [categories, setCategories] = useState<any[]>([]);
+  const [splitSize, setSplitSize] = useState('200');
+  const [vocabularyItems, setVocabularyItems] = useState<VocabularyItem[]>([]);
+  const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const token = getAuthToken();
+        if (!token) {
+          toast.error('인증이 필요합니다.');
+          return;
+        }
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/admin/categories`,
+          {
+            headers: {
+              'Authorization': `Bearer ${token}`,
+            },
+          }
+        );
+        const data = await response.json();
+        if (data.categories) {
+          const enabled = data.categories.filter((c: any) => c.enabled);
+          setCategories(enabled);
+          if (enabled.length > 0) {
+            setCategory(enabled[0].name);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading categories:', error);
+      }
+    };
+
+    loadCategories();
+  }, [getAuthToken]);
+
+  const handleBulkGenerateAndSave = async () => {
+    if (!title.trim()) {
+      toast.error('Title을 입력해주세요.');
+      return;
+    }
+    if (!category) {
+      toast.error('Category를 선택해주세요.');
+      return;
+    }
+
+    // vocabularyItems에서 단어만 있는 항목 확인
+    const validItems = vocabularyItems.filter(item => item.word && item.word.trim() !== '');
+    if (validItems.length === 0) {
+      toast.error('표에 단어를 입력해주세요.');
+      return;
+    }
+
+    if (!splitSize.trim() || parseInt(splitSize) <= 0) {
+      toast.error('분할 크기를 입력해주세요.');
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('인증이 필요합니다.');
+      return;
+    }
+
+    const split = parseInt(splitSize);
+    const totalParts = Math.ceil(validItems.length / split);
+
+    // Bulk Upload: 30개 배치로 AI 생성, 4개 병렬 (50개는 Gemini가 누락 발생)
+    const AI_BATCH_SIZE = 30;
+    const AI_CONCURRENCY = 4;
+
+    setIsSaving(true);
+    let successCount = 0;
+
+    try {
+      // Part별로 순차 처리 (저장 단위)
+      for (let i = 0; i < totalParts; i++) {
+        const startIdx = i * split;
+        const endIdx = Math.min((i + 1) * split, validItems.length);
+        const partWords = validItems.slice(startIdx, endIdx);
+        const partTitle = `${title} (${i + 1}/${totalParts})`;
+
+        // Step 1: AI 생성 - 50개씩 4개 병렬
+        toast.loading(`${partTitle} AI 생성 중... (${i + 1}/${totalParts})`, { id: `bulk-processing-${i}` });
+
+        // partWords를 AI_BATCH_SIZE(50개)씩 나누기
+        const aiBatches: typeof partWords[] = [];
+        for (let j = 0; j < partWords.length; j += AI_BATCH_SIZE) {
+          aiBatches.push(partWords.slice(j, j + AI_BATCH_SIZE));
+        }
+
+        // AI 배치 요청 함수
+        const fetchAiBatch = async (batchWords: typeof partWords, batchIdx: number) => {
+          console.log(`🔄 AI 배치 ${batchIdx + 1} 요청: ${batchWords.length}개 단어`);
+
+          const aiResponse = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/server/generate-vocabulary-batch`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                words: batchWords.map(item => ({
+                  word: item.word?.trim() || '',
+                  meaning: item.meaning?.trim() || '',
+                  synonyms: Array.isArray(item.synonyms) ? item.synonyms.join(', ') : (item.synonyms || ''),
+                  antonyms: Array.isArray(item.antonyms) ? item.antonyms.join(', ') : (item.antonyms || ''),
+                  example: item.example?.trim() || '',
+                  translation: item.translation?.trim() || ''
+                }))
+              })
+            }
+          );
+
+          if (!aiResponse.ok) {
+            const errorData = await aiResponse.json();
+            throw new Error(`AI 생성 실패: ${errorData.error || '알 수 없는 오류'}`);
+          }
+
+          const aiData = await aiResponse.json();
+          if (!aiData.success || !aiData.results) {
+            throw new Error('AI 생성 실패: 결과 없음');
+          }
+
+          console.log(`✅ AI 배치 ${batchIdx + 1} 완료: 요청 ${batchWords.length}개 → 결과 ${aiData.results.length}개`);
+
+          // 결과 개수가 요청과 다르면 경고
+          if (aiData.results.length !== batchWords.length) {
+            console.warn(`⚠️ AI 결과 개수 불일치! 요청: ${batchWords.length}, 결과: ${aiData.results.length}`);
+          }
+
+          return aiData.results;
+        };
+
+        // AI_CONCURRENCY(4개)씩 병렬 처리
+        const allAiResults: any[] = [];
+        console.log(`📦 Part ${i + 1}: 총 ${partWords.length}개 → ${aiBatches.length}개 AI 배치로 분할`);
+
+        for (let j = 0; j < aiBatches.length; j += AI_CONCURRENCY) {
+          const batchGroup = aiBatches.slice(j, j + AI_CONCURRENCY);
+          const results = await Promise.all(batchGroup.map((batch, idx) => fetchAiBatch(batch, j + idx)));
+          allAiResults.push(...results.flat());
+
+          // 진행 상황 업데이트
+          const completed = Math.min((j + AI_CONCURRENCY), aiBatches.length);
+          toast.loading(`${partTitle} AI 생성 중... (배치 ${completed}/${aiBatches.length})`, { id: `bulk-processing-${i}` });
+
+          // Rate limit 방지: 배치 그룹 간 1초 대기
+          if (j + AI_CONCURRENCY < aiBatches.length) {
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          }
+        }
+
+        // Step 2: 저장
+        console.log(`💾 Part ${i + 1} 저장: 원본 ${partWords.length}개 → AI 결과 ${allAiResults.length}개`);
+
+        if (allAiResults.length !== partWords.length) {
+          console.error(`❌ Part ${i + 1} 단어 개수 불일치! 원본: ${partWords.length}, AI 결과: ${allAiResults.length}`);
+        }
+
+        toast.loading(`${partTitle} 저장 중... (${i + 1}/${totalParts})`, { id: `bulk-processing-${i}` });
+
+        const saveResponse = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              title: partTitle,
+              category,
+              description: description ? `${description} (${startIdx + 1}-${endIdx}번 단어)` : `${startIdx + 1}-${endIdx}번 단어`,
+              words: allAiResults
+            })
+          }
+        );
+
+        if (!saveResponse.ok) {
+          const errorData = await saveResponse.json();
+          throw new Error(`${partTitle} 저장 실패: ${errorData.error || '알 수 없는 오류'}`);
+        }
+
+        toast.dismiss(`bulk-processing-${i}`);
+        toast.success(`${partTitle} 완료!`, { duration: 2000 });
+        successCount++;
+
+        // 서버 부하 방지
+        if (i < totalParts - 1) {
+          await new Promise(resolve => setTimeout(resolve, 500));
+        }
+      }
+
+      toast.success(`${successCount}개의 단어장이 생성되었습니다! (총 ${validItems.length}개 단어)`);
+
+      // 초기화
+      setTitle('');
+      setDescription('');
+      setVocabularyItems([]);
+      setSplitSize('200');
+    } catch (error: any) {
+      console.error('Failed to bulk upload:', error);
+      toast.error(error?.message || '대량 업로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  return (
+    <div className="p-8 space-y-6">
+      <div className="bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
+        <h2 className="text-xl font-semibold text-[#491B6D] mb-2">대량 단어장 생성</h2>
+        <p className="text-sm text-gray-500 mb-6">엑셀 데이터를 붙여넣으면 AI가 비어있는 필드를 채우고 50개씩 나눠서 저장합니다 (2개씩 병렬 처리).</p>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+          <div>
+            <label className="block text-sm font-semibold text-gray-600 mb-2">Title *</label>
+            <input
+              type="text"
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              placeholder="예: 서울대 기출 어휘"
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-600 mb-2">Category *</label>
+            {category === '__new__' ? (
+              <div className="space-y-2">
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="이모지 (예: 📚)"
+                    value={categories.find(c => c.name === '__temp__')?.icon || ''}
+                    onChange={(e) => {
+                      const icon = e.target.value.slice(0, 2);
+                      setCategories(prev => {
+                        const temp = prev.find(c => c.name === '__temp__');
+                        if (temp) {
+                          return prev.map(c => c.name === '__temp__' ? { ...c, icon } : c);
+                        } else {
+                          return [...prev, { id: '__temp__', name: '__temp__', icon, enabled: true }];
+                        }
+                      });
+                    }}
+                    className="w-20 px-3 py-2 border rounded-lg text-center"
+                    maxLength={2}
+                  />
+                  <input
+                    type="text"
+                    placeholder="카테고리 이름 (예: 기타)"
+                    value={categories.find(c => c.name === '__temp__')?.tempName || ''}
+                    onChange={(e) => {
+                      const tempName = e.target.value;
+                      setCategories(prev => {
+                        const temp = prev.find(c => c.name === '__temp__');
+                        if (temp) {
+                          return prev.map(c => c.name === '__temp__' ? { ...c, tempName } : c);
+                        } else {
+                          return [...prev, { id: '__temp__', name: '__temp__', icon: '📚', tempName, enabled: true }];
+                        }
+                      });
+                    }}
+                    className="flex-1 px-3 py-2 border rounded-lg"
+                  />
+                  <button
+                    onClick={async () => {
+                      const temp = categories.find(c => c.name === '__temp__');
+                      if (!temp?.tempName || !temp?.icon) {
+                        toast.error('이모지와 카테고리 이름을 모두 입력해주세요.');
+                        return;
+                      }
+
+                      const token = getAuthToken();
+                      if (!token) {
+                        toast.error('인증이 필요합니다.');
+                        return;
+                      }
+
+                      try {
+                        const response = await fetch(
+                          `https://${projectId}.supabase.co/functions/v1/server/admin/categories`,
+                          {
+                            method: 'POST',
+                            headers: {
+                              'Content-Type': 'application/json',
+                              'Authorization': `Bearer ${token}`,
+                            },
+                            body: JSON.stringify({
+                              name: temp.tempName,
+                              icon: temp.icon,
+                            }),
+                          }
+                        );
+
+                        const data = await response.json();
+
+                        if (!response.ok) {
+                          console.error('❌ Category creation error response:', data);
+                          throw new Error(data.error || '카테고리 생성 실패');
+                        }
+
+                        console.log('✅ Category created:', data.category);
+                        toast.success('새 카테고리가 생성되었습니다!');
+
+                        // Add the new category to the existing list
+                        const newCategory = {
+                          id: data.category.id,
+                          name: data.category.name,
+                          icon: data.category.icon,
+                          enabled: data.category.enabled,
+                          sort_order: data.category.order
+                        };
+
+                        // Update categories: remove temp, add new category
+                        setCategories(prev => {
+                          const withoutTemp = prev.filter(c => c.name !== '__temp__');
+                          // Check if category already exists
+                          const exists = withoutTemp.find(c => c.name === newCategory.name);
+                          if (exists) return withoutTemp;
+                          return [...withoutTemp, newCategory];
+                        });
+
+                        // Set the newly created category as selected
+                        setCategory(data.category.name);
+
+                        console.log('✅ Category added to list and selected:', data.category.name);
+                      } catch (error) {
+                        console.error('Error creating category:', error);
+                        toast.error('카테고리 생성에 실패했습니다.');
+                      }
+                    }}
+                    className="px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-colors"
+                  >
+                    생성
+                  </button>
+                  <button
+                    onClick={() => {
+                      setCategories(prev => prev.filter(c => c.name !== '__temp__'));
+                      setCategory(categories.length > 0 ? categories[0].name : '');
+                    }}
+                    className="px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors"
+                  >
+                    취소
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 border rounded-lg"
+              >
+                <option value="">카테고리 선택</option>
+                {categories.filter(c => c.name !== '__temp__').map((cat) => (
+                  <option key={cat.id} value={cat.name}>
+                    {cat.icon} {cat.name}
+                  </option>
+                ))}
+                <option value="__new__">➕ 새 카테고리 추가...</option>
+              </select>
+            )}
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-600 mb-2">Description</label>
+            <input
+              type="text"
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              placeholder="간단한 설명 (선택)"
+              className="w-full px-3 py-2 border rounded-lg"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-600 mb-2">분할 크기 *</label>
+            <input
+              type="number"
+              value={splitSize}
+              onChange={(e) => setSplitSize(e.target.value)}
+              placeholder="50"
+              className="w-full px-3 py-2 border rounded-lg"
+              min="1"
+            />
+          </div>
+        </div>
+
+        <VocabularyInputAdvanced
+          data={vocabularyItems}
+          onChange={setVocabularyItems}
+          onSave={() => {}}
+          hideHeaderFields={true}
+          fullscreen={true}
+        />
+
+        {vocabularyItems.length > 0 && splitSize.trim() && parseInt(splitSize) > 0 && (
+          <p className="text-xs text-gray-500 mt-2">
+            💡 총 {vocabularyItems.length}개 단어 → {Math.ceil(vocabularyItems.length / parseInt(splitSize))}개의 단어장으로 분할됩니다
+          </p>
+        )}
+
+        <div className="mt-6 flex justify-end">
+          <button
+            onClick={handleBulkGenerateAndSave}
+            disabled={isSaving}
+            className="px-6 py-3 rounded-xl bg-gradient-to-r from-[#491B6D] to-[#5E2278] text-white font-semibold shadow-lg disabled:opacity-50"
+          >
+            {isSaving ? '처리 중...' : '🚀 AI 생성 및 자동 저장'}
+          </button>
+        </div>
+      </div>
+
+      <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4">
+        <h3 className="font-semibold text-blue-900 mb-2">📌 사용 방법</h3>
+        <ul className="text-sm text-blue-800 space-y-1">
+          <li>• 엑셀 표 형식으로 단어를 입력하거나 붙여넣으세요</li>
+          <li>• "🤖 표 데이터로 AI 생성" 버튼으로 비어있는 필드만 채웁니다</li>
+          <li>• AI가 발음, 품사, 파생어, 어원 등을 자동 생성합니다</li>
+          <li>• 50개(권장)씩 자동으로 나눠서 여러 단어장을 만듭니다 (2개씩 병렬 처리)</li>
+          <li>• 예: 1000개 입력 → "제목 (1/20)", "제목 (2/20)" ... 형태로 20개 생성</li>
+        </ul>
+      </div>
+    </div>
+  );
+}
+
 // Upload Screen - Excel Style Input
 
 function UploadScreen() {
@@ -468,6 +910,7 @@ function UploadScreen() {
   const [headerInfo, setHeaderInfo] = useState({ headerTitle: '', headerDescription: '' });
   const [tokenInfo, setTokenInfo] = useState<{ inputTokens: number; outputTokens: number } | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [autoSplitSize, setAutoSplitSize] = useState<string>(''); // 자동 분할 개수
 
   useEffect(() => {
     const loadCategories = async () => {
@@ -504,6 +947,89 @@ function UploadScreen() {
     loadCategories();
   }, [getAuthToken]);
 
+  // 분할된 단어장 직접 생성 및 저장 (AI 생성 + 저장 통합)
+  const handleGenerateAndSaveSplitVocabularies = async () => {
+    if (!title.trim()) {
+      toast.error('Title을 입력해주세요.');
+      return;
+    }
+    if (!category) {
+      toast.error('Category를 선택해주세요.');
+      return;
+    }
+    if (vocabularyItems.length === 0) {
+      toast.error('먼저 단어를 입력해주세요.');
+      return;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('인증이 필요합니다. 다시 로그인해주세요.');
+      return;
+    }
+
+    const splitSize = autoSplitSize.trim() !== '' ? parseInt(autoSplitSize) : 0;
+    if (splitSize <= 0 || vocabularyItems.length <= splitSize) {
+      toast.error('자동 분할 크기를 설정해주세요.');
+      return;
+    }
+
+    setIsSaving(true);
+    const totalParts = Math.ceil(vocabularyItems.length / splitSize);
+    let successCount = 0;
+
+    try {
+      for (let i = 0; i < totalParts; i++) {
+        const startIdx = i * splitSize;
+        const endIdx = Math.min((i + 1) * splitSize, vocabularyItems.length);
+        const partWords = vocabularyItems.slice(startIdx, endIdx);
+        const partTitle = `${title} (${i + 1}/${totalParts})`;
+
+        toast.loading(`${partTitle} 처리 중... (AI 생성 + 저장)`, { id: 'processing-parts' });
+
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              title: partTitle,
+              category,
+              description: description ? `${description} (${startIdx + 1}-${endIdx}번 단어)` : `${startIdx + 1}-${endIdx}번 단어`,
+              words: partWords
+            })
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(`${partTitle} 저장 실패: ${errorData.error || '알 수 없는 오류'}`);
+        }
+
+        successCount++;
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      toast.dismiss('processing-parts');
+      toast.success(`${successCount}개의 단어장이 생성되었습니다! (총 ${vocabularyItems.length}개 단어)`);
+
+      // 초기화
+      setTitle('');
+      setDescription('');
+      setVocabularyItems([]);
+      setHeaderInfo({ headerTitle: '', headerDescription: '' });
+      setAutoSplitSize('');
+    } catch (error: any) {
+      console.error('Failed to generate and save:', error);
+      toast.error(error?.message || '단어장 생성 중 오류가 발생했습니다.');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
   const handleSaveSharedVocabulary = async () => {
     if (!title.trim()) {
       toast.error('Title을 입력해주세요.');
@@ -526,33 +1052,83 @@ function UploadScreen() {
 
     setIsSaving(true);
     try {
-      const response = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies`,
-        {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({
-            title,
-            category,
-            description,
-            words: vocabularyItems
-          })
-        }
-      );
+      // 자동 분할 크기 파싱
+      const splitSize = autoSplitSize.trim() !== '' ? parseInt(autoSplitSize) : 0;
 
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || '단어장 저장에 실패했습니다.');
+      if (splitSize > 0 && vocabularyItems.length > splitSize) {
+        // 자동 분할 모드
+        const totalParts = Math.ceil(vocabularyItems.length / splitSize);
+        let successCount = 0;
+
+        for (let i = 0; i < totalParts; i++) {
+          const startIdx = i * splitSize;
+          const endIdx = Math.min((i + 1) * splitSize, vocabularyItems.length);
+          const partWords = vocabularyItems.slice(startIdx, endIdx);
+          const partTitle = `${title} (${i + 1}/${totalParts})`;
+
+          toast.loading(`${partTitle} 저장 중...`, { id: 'saving-parts' });
+
+          const response = await fetch(
+            `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies`,
+            {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${token}`
+              },
+              body: JSON.stringify({
+                title: partTitle,
+                category,
+                description: description ? `${description} (${startIdx + 1}-${endIdx}번 단어)` : `${startIdx + 1}-${endIdx}번 단어`,
+                words: partWords
+              })
+            }
+          );
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            throw new Error(`${partTitle} 저장 실패: ${errorData.error || '알 수 없는 오류'}`);
+          }
+
+          successCount++;
+          await new Promise(resolve => setTimeout(resolve, 500)); // 서버 부하 방지
+        }
+
+        toast.dismiss('saving-parts');
+        toast.success(`${successCount}개의 단어장이 생성되었습니다! (총 ${vocabularyItems.length}개 단어)`);
+      } else {
+        // 일반 모드 (분할 없음)
+        const response = await fetch(
+          `https://${projectId}.supabase.co/functions/v1/server/admin/shared-vocabularies`,
+          {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${token}`
+            },
+            body: JSON.stringify({
+              title,
+              category,
+              description,
+              words: vocabularyItems
+            })
+          }
+        );
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.error || '단어장 저장에 실패했습니다.');
+        }
+
+        toast.success('공유 단어장이 생성되었습니다!');
       }
 
-      toast.success('공유 단어장이 생성되었습니다!');
+      // 초기화
       setTitle('');
       setDescription('');
       setVocabularyItems([]);
       setHeaderInfo({ headerTitle: '', headerDescription: '' });
+      setAutoSplitSize('');
     } catch (error: any) {
       console.error('Failed to save shared vocabulary:', error);
       toast.error(error?.message || '단어장 저장 중 오류가 발생했습니다.');
@@ -728,6 +1304,24 @@ function UploadScreen() {
               placeholder="간단한 소개를 입력하세요"
               className="w-full px-3 py-2 border rounded-lg h-24"
             />
+          </div>
+          <div>
+            <label className="block text-sm font-semibold text-gray-600 mb-2">
+              자동 분할 (선택)
+            </label>
+            <input
+              type="number"
+              value={autoSplitSize}
+              onChange={(e) => setAutoSplitSize(e.target.value)}
+              placeholder="예: 200 (비우면 분할 안 함)"
+              className="w-full px-3 py-2 border rounded-lg"
+              min="1"
+            />
+            {autoSplitSize.trim() !== '' && vocabularyItems.length > 0 && (
+              <p className="text-xs text-gray-500 mt-1">
+                💡 총 {vocabularyItems.length}개 단어 → {Math.ceil(vocabularyItems.length / parseInt(autoSplitSize || '1'))}개의 단어장으로 분할됩니다
+              </p>
+            )}
           </div>
         </div>
       </div>

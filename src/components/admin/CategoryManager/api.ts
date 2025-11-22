@@ -55,7 +55,10 @@ export const categoryApi = {
     });
 
     if (!response.ok) {
-      throw new Error('Failed to delete vocabulary');
+      const errorData = await response.json().catch(() => ({}));
+      const errorMessage = errorData.error || `Failed to delete vocabulary (${response.status})`;
+      console.error('Delete vocabulary error:', errorData);
+      throw new Error(errorMessage);
     }
   },
 
@@ -84,6 +87,18 @@ export const categoryApi = {
       const errorMessage = errorData.error || `Failed to merge vocabularies (${response.status})`;
       console.error('Merge error details:', errorData);
       throw new Error(errorMessage);
+    }
+  },
+
+  // Delete category
+  async deleteCategory(token: string, categoryId: string): Promise<void> {
+    const response = await fetch(`${BASE_URL}/categories/${categoryId}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to delete category');
     }
   },
 };

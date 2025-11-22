@@ -100,11 +100,15 @@ const normalizeMultilineText = (text?: string): string | undefined => {
   return condensed || undefined;
 };
 
-// Clean up OCR formatting issues for print output
+// Clean up OCR formatting issues for print output and input
 const cleanOCRText = (text: string): string => {
   return text
     // Remove carriage returns
     .replace(/\r/g, '')
+    // Fix common OCR mistakes
+    .replace(/[|｜]/g, 'I') // Replace | with I
+    .replace(/[０-９]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)) // Full-width to half-width numbers
+    .replace(/[Ａ-Ｚａ-ｚ]/g, (m) => String.fromCharCode(m.charCodeAt(0) - 0xFEE0)) // Full-width to half-width letters
     // Replace multiple spaces with single space
     .replace(/[ \t]{2,}/g, ' ')
     // Replace 3+ consecutive line breaks with 2
@@ -302,7 +306,9 @@ export function TextExtractorScreen({ onBack, onNavigateToTutor }: TextExtractor
           }
 
           if (data.text) {
-            setInputText(data.text);
+            // Clean OCR text before setting it
+            const cleanedText = cleanOCRText(data.text);
+            setInputText(cleanedText);
             toast.success('이미지에서 텍스트를 추출했습니다.');
           } else {
             toast.error('이미지에서 텍스트를 찾을 수 없습니다.');

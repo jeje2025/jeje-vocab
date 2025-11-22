@@ -195,13 +195,13 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text');
     const rows_data = pastedData.split('\n').filter(row => row.trim() !== '');
-    
+
     const newRows = [...rows];
-    
+
     rows_data.forEach((row, rowOffset) => {
       const cells = row.split('\t');
       const targetRow = startRow + rowOffset;
-      
+
       // 필요하면 행 추가
       while (newRows.length <= targetRow) {
         newRows.push({
@@ -213,7 +213,7 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
           translation: ''
         });
       }
-      
+
       cells.forEach((cell, colOffset) => {
         const targetCol = startCol + colOffset;
         if (targetCol < columns.length) {
@@ -221,8 +221,27 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
         }
       });
     });
-    
+
     setRows(newRows);
+
+    // ⭐ 붙여넣기 후 parent에게 데이터 전달
+    if (onChange) {
+      onChange(newRows.map((row, idx) => ({
+        id: idx + 1,
+        word: row.word,
+        pronunciation: data?.[idx]?.pronunciation || '',
+        partOfSpeech: data?.[idx]?.partOfSpeech || '',
+        meaning: row.meaning,
+        definition: data?.[idx]?.definition || undefined,
+        synonyms: row.synonyms.split(',').map(s => s.trim()).filter(s => s !== ''),
+        antonyms: row.antonyms.split(',').map(s => s.trim()).filter(s => s !== ''),
+        derivatives: data?.[idx]?.derivatives || [],
+        example: row.example,
+        translation: row.translation,
+        translationHighlight: data?.[idx]?.translationHighlight || '',
+        etymology: data?.[idx]?.etymology || ''
+      })));
+    }
   };
 
   // CSV 파일 업로드 처리
@@ -269,8 +288,8 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     }
   };
 
-  // 병렬 처리 설정
-  const BATCH_SIZE = 10; // Reduced from 20 to prevent JSON parsing errors
+  // 병렬 처리 설정 - Create Vocabulary: 20개 배치, 3개 병렬
+  const BATCH_SIZE = 20;
   const CONCURRENCY_LIMIT = 3;
 
   // Gemini API로 부족한 정보 생성 (백엔드 호출 - 배치 모드) - 재시도 로직 포함
@@ -299,7 +318,11 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
         body: JSON.stringify({
           words: validItems.map(item => ({
             word: item.word.trim(),
-            meaning: item.meaning ? item.meaning.trim() : ''
+            meaning: item.meaning ? item.meaning.trim() : '',
+            synonyms: item.synonyms ? item.synonyms.trim() : '',
+            antonyms: item.antonyms ? item.antonyms.trim() : '',
+            example: item.example ? item.example.trim() : '',
+            translation: item.translation ? item.translation.trim() : ''
           }))
         })
       });
@@ -428,9 +451,9 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
     while (currentIndex < batches.length) {
       currentIndex = await processBatchGroup(currentIndex);
 
-      // Small delay between batch groups to avoid rate limiting
+      // Rate limit 방지: 배치 그룹 간 1초 대기
       if (currentIndex < batches.length) {
-        await new Promise(resolve => setTimeout(resolve, 300));
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
     }
 
@@ -572,78 +595,29 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
         </div>
       )}
 
-      {/* 큰 단어 입력창 */}
-      <div className="mb-4 flex-shrink-0">
-        <Label className="text-xs text-slate-700 mb-2 block">단어 입력 (쉼표 또는 엔터로 구분)</Label>
-        <textarea
-          value={wordInput}
-          onChange={(e) => setWordInput(e.target.value)}
-          placeholder="단어를 입력하세요. 예: apple, banana, cat"
-          className="w-full h-24 px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"
-        />
-        <div className="mt-2 flex gap-2">
-          <Button 
-            onClick={async () => {
-              // ⭐ 제목 체크를 먼저 수행
-              if (headerInfo && (headerInfo.headerTitle.trim() === 'JEJEVOCA' || headerInfo.headerTitle.trim() === '')) {
-                setTitleError(true);
-                toast.error('제목을 먼저 입력해주세요!', { duration: 1000 });
-                
-                setTimeout(() => {
-                  const titleInput = document.getElementById('headerTitle') as HTMLInputElement;
-                  if (titleInput) {
-                    if (headerInfo.headerTitle.trim() === 'JEJEVOCA') {
-                      if (onHeaderChange) {
-                        onHeaderChange({ ...headerInfo, headerTitle: '' });
-                      }
-                    }
-                    titleInput.focus();
-                    titleInput.select();
-                  }
-                }, 100);
-                
-                setTimeout(() => {
-                  setTitleError(false);
-                }, 3000);
-                
-                // ⭐ wordInput 보존하고 종료
-                return;
-              }
-              
-              // 제목이 있으면 테이블에 넣고 AI 생성
-              const newRows = handleWordInputProcess();
-              if (newRows) {
-                // ⭐ 직접 newRows를 handleSave에 전달 - state 업데이트 기다릴 필요 없음
-                handleSave(newRows);
-              }
-            }} 
-            disabled={isGenerating || !wordInput.trim()}
-            size="sm"
-          >
-            {isGenerating ? 'AI 생성 중...' : '🤖 생성'}
-          </Button>
-          <Button onClick={addRow} variant="outline" size="sm">
-            + 행
-          </Button>
-          <Button 
-            onClick={() => {
-              setRows(Array(10).fill(null).map(() => ({
-                word: '',
-                meaning: '',
-                synonyms: '',
-                antonyms: '',
-                example: '',
-                translation: ''
-              })));
-              setWordInput('');
-              toast.success('모든 데이터가 비워졌습니다', { duration: 1000 });
-            }}
-            variant="outline"
-            size="sm"
-          >
-            전체 비우기
-          </Button>
-        </div>
+      {/* 표 상단 버튼들 */}
+      <div className="mb-3 flex gap-2 flex-shrink-0">
+        <Button onClick={addRow} variant="outline" size="sm">
+          + 행 추가
+        </Button>
+        <Button
+          onClick={() => {
+            setRows(Array(10).fill(null).map(() => ({
+              word: '',
+              meaning: '',
+              synonyms: '',
+              antonyms: '',
+              example: '',
+              translation: ''
+            })));
+            setWordInput('');
+            toast.success('모든 데이터가 비워졌습니다', { duration: 1000 });
+          }}
+          variant="outline"
+          size="sm"
+        >
+          전체 비우기
+        </Button>
       </div>
 
       {/* 엑셀 표 - 옆으로 스크롤 */}
@@ -697,6 +671,46 @@ export function VocabularyInputAdvanced({ onSave, initialData = [], data, fullsc
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* 테이블 데이터로 AI 생성 버튼 */}
+      <div className="mt-3 flex gap-2 flex-shrink-0">
+        <Button
+          onClick={async () => {
+            // 제목 체크
+            if (headerInfo && !hideHeaderFields && (headerInfo.headerTitle.trim() === 'JEJEVOCA' || headerInfo.headerTitle.trim() === '')) {
+              setTitleError(true);
+              toast.error('제목을 먼저 입력해주세요!', { duration: 1000 });
+
+              setTimeout(() => {
+                const titleInput = document.getElementById('headerTitle') as HTMLInputElement;
+                if (titleInput) {
+                  if (headerInfo.headerTitle.trim() === 'JEJEVOCA') {
+                    if (onHeaderChange) {
+                      onHeaderChange({ ...headerInfo, headerTitle: '' });
+                    }
+                  }
+                  titleInput.focus();
+                  titleInput.select();
+                }
+              }, 100);
+
+              setTimeout(() => {
+                setTitleError(false);
+              }, 3000);
+
+              return;
+            }
+
+            // 테이블의 현재 데이터로 AI 생성
+            await handleSave();
+          }}
+          disabled={isGenerating}
+          size="sm"
+          className="bg-purple-600 hover:bg-purple-700"
+        >
+          {isGenerating ? 'AI 생성 중...' : '🤖 표 데이터로 AI 생성 (빈 칸만 채우기)'}
+        </Button>
       </div>
     </div>
   );
