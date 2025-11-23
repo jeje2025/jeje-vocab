@@ -305,6 +305,10 @@ For EACH word, generate a JSON object with the following fields:
 2. pronunciation: IPA phonetic notation (example: "/ˈwɜːrd/")
 3. partOfSpeech: Part of speech in Korean (examples: "n.", "v.", "adj.", "adv.")
 4. meaning: Korean meaning (use user-provided if available, otherwise generate)
+   - For words with MULTIPLE meanings (polysemy), include ALL common meanings
+   - Use circled numbers (①, ②, ③, etc.) to separate different meanings
+   - Example: "affect" → "①영향을 미치다 ②가장하다, ~인 체하다"
+   - Include at least 2-4 meanings for common polysemous words
 5. definition: Short English definition in 8-12 words
 6. synonyms: Array of 4-5 English synonym strings - CONVERT user-provided comma-separated synonyms to array if provided
 7. antonyms: Array of 2-3 English antonym strings - CONVERT user-provided comma-separated antonyms to array if provided
@@ -317,6 +321,7 @@ For EACH word, generate a JSON object with the following fields:
 CRITICAL REQUIREMENTS:
 - PRESERVE all user-provided data (meaning, synonyms, antonyms, example, translation)
 - Only generate fields that are NOT provided by the user
+- For polysemous words, provide comprehensive meanings with circled numbers (①, ②, ③)
 - Convert comma-separated synonyms/antonyms to array format (e.g., "happy, joyful" -> ["happy", "joyful"])
 - Return a JSON array with EXACTLY ${validWords.length} objects in the SAME ORDER as the input words
 - Each object must include ALL fields above

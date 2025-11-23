@@ -9,7 +9,11 @@ import {
   Skull,
   Trash2,
   Home,
-  ShoppingCart
+  ShoppingCart,
+  Shuffle,
+  Edit3,
+  Check,
+  X
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import { BackButton } from './BackButton';
@@ -17,6 +21,8 @@ import { MemoryMatchGame } from './games/MemoryMatchGame';
 import { ZombieGameScreen } from './ZombieGame';
 import { useWordBasket, BasketWord } from '../hooks/useWordBasket';
 import { WordBasketModal } from './selection/WordBasketModal';
+import { useAuth } from '../hooks/useAuth';
+import { projectId } from '../utils/supabase/info';
 
 const env = typeof import.meta !== 'undefined' ? import.meta.env : undefined;
 const DEBUG_WORD_LIST = Boolean(env?.DEV) && env?.VITE_DEBUG_WORD_LIST === 'true';
@@ -89,6 +95,9 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
     removeWord: removeBasketWord,
   } = useWordBasket();
   const [showBasketModal, setShowBasketModal] = useState(false);
+  const { getAuthToken } = useAuth();
+  const [editingWordId, setEditingWordId] = useState<string | null>(null);
+  const [editingMeaning, setEditingMeaning] = useState<string>('');
   logWordList('🎯 Received props:', {
     vocabularyWords: vocabularyWords?.length || 0,
     hideActionButtons,
@@ -424,6 +433,86 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
     setWords(words.map(w => ({ ...w, exampleLanguage: newLanguage })));
   };
 
+  // 랜덤 섞기 함수
+  const shuffleWords = () => {
+    const shuffled = [...words].sort(() => Math.random() - 0.5);
+    setWords(shuffled);
+    toast.success('단어 순서가 섞였습니다!', {
+      duration: 2000,
+    });
+  };
+
+  // API: Update word meaning
+  const updateWordMeaning = async (wordId: string, newMeaning: string) => {
+    if (!vocabularyId) {
+      toast.error('단어장 정보를 찾을 수 없습니다.');
+      return false;
+    }
+
+    const token = getAuthToken();
+    if (!token) {
+      toast.error('로그인이 필요합니다.');
+      return false;
+    }
+
+    try {
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/server/user-vocabulary/${vocabularyId}/word/${wordId}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ meaning: newMeaning }),
+        }
+      );
+
+      if (!response.ok) {
+        throw new Error('Failed to update word meaning');
+      }
+
+      return true;
+    } catch (error) {
+      console.error('Error updating word meaning:', error);
+      return false;
+    }
+  };
+
+  // Start editing a word meaning
+  const startEditingMeaning = (wordId: string, currentMeaning: string) => {
+    setEditingWordId(wordId);
+    setEditingMeaning(currentMeaning);
+  };
+
+  // Cancel editing
+  const cancelEditingMeaning = () => {
+    setEditingWordId(null);
+    setEditingMeaning('');
+  };
+
+  // Save edited meaning
+  const saveEditedMeaning = async (wordId: string) => {
+    if (!editingMeaning.trim()) {
+      toast.error('뜻을 입력해주세요.');
+      return;
+    }
+
+    const success = await updateWordMeaning(wordId, editingMeaning.trim());
+
+    if (success) {
+      // Update local state
+      setWords(words.map(w =>
+        w.id === wordId ? { ...w, meaning: editingMeaning.trim() } : w
+      ));
+      setEditingWordId(null);
+      setEditingMeaning('');
+      toast.success('뜻이 수정되었습니다!');
+    } else {
+      toast.error('뜻 수정에 실패했습니다.');
+    }
+  };
+
   const buildBasketWord = (
     word: WordData,
     relationType: RelationType,
@@ -619,19 +708,31 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
 
         {/* Action Buttons */}
         <div className="px-4 pb-3 bg-transparent">
-          <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide m-[0px] p-[3px]">
+          <div className="flex items-center justify-center gap-1.5 overflow-x-auto scrollbar-hide m-[0px] p-[3px]">
+            {/* Shuffle Button */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={shuffleWords}
+              className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
+            >
+              <Shuffle className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                섞기
+              </span>
+            </motion.button>
+
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={toggleHideAllMeanings}
-              className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+              className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
             >
               {hideAllMeanings ? (
-                <Eye className="w-3.5 h-3.5" style={{ color: theme.iconColor || '#8B5CF6' }} />
+                <Eye className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
               ) : (
-                <EyeOff className="w-3.5 h-3.5" style={{ color: theme.iconColor || '#8B5CF6' }} />
+                <EyeOff className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
               )}
-              <span style={{ fontSize: '12px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
-                {hideAllMeanings ? '모두 보기' : '모두 가리기'}
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                {hideAllMeanings ? '보기' : '가리기'}
               </span>
             </motion.button>
 
@@ -641,11 +742,11 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={words.every(w => w.isExpanded) ? collapseAll : expandAll}
-                  className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
                 >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${words.every(w => w.isExpanded) ? 'rotate-180' : ''}`} style={{ color: theme.iconColor || '#8B5CF6' }} />
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
-                    {words.every(w => w.isExpanded) ? '모두 접기' : '모두 펼치기'}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${words.every(w => w.isExpanded) ? 'rotate-180' : ''}`} style={{ color: theme.iconColor || '#8B5CF6' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                    {words.every(w => w.isExpanded) ? '접기' : '펼치기'}
                   </span>
                 </motion.button>
 
@@ -653,21 +754,21 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={toggleAllExampleLanguage}
-                  className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
+                  className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
                 >
                   <span
                     style={{
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 700,
                       color: exampleLanguage === 'en' ? '#491B6D' : '#9CA3AF'
                     }}
                   >
                     EN
                   </span>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#9CA3AF' }}>|</span>
+                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#9CA3AF' }}>|</span>
                   <span
                     style={{
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 700,
                       color: exampleLanguage === 'kr' ? '#491B6D' : '#9CA3AF'
                     }}
@@ -680,18 +781,18 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={handleBasketButtonClick}
-                  className={`px-3 py-2 backdrop-blur-lg rounded-xl border shadow-sm flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-2.5 py-1.5 backdrop-blur-lg rounded-lg border shadow-sm flex items-center gap-1 whitespace-nowrap ${
                     basketCount > 0
                       ? 'bg-[#5B21B6] text-white border-[#5B21B6]'
                       : 'bg-white/90 text-[#5B21B6] border-white/40'
                   }`}
                 >
-                  <ShoppingCart className="w-3.5 h-3.5" />
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                    장바구니
+                  <ShoppingCart className="w-3 h-3" />
+                  <span style={{ fontSize: '11px', fontWeight: 600 }}>
+                    추가
                   </span>
                   {basketCount > 0 && (
-                    <span style={{ fontSize: '10px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
+                    <span style={{ fontSize: '9px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
                       {basketCount}
                     </span>
                   )}
@@ -791,19 +892,31 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
       {/* Action Buttons - Only show when header is hidden */}
       {hideHeader && (
         <div className="sticky top-0 z-40 border-b border-white/20 bg-transparent px-[10px] py-[6px]">
-          <div className="flex items-center justify-center gap-2 overflow-x-auto scrollbar-hide m-[0px] p-[3px]">
+          <div className="flex items-center justify-center gap-1.5 overflow-x-auto scrollbar-hide m-[0px] p-[3px]">
+            {/* Shuffle Button */}
+            <motion.button
+              whileTap={{ scale: 0.95 }}
+              onClick={shuffleWords}
+              className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
+            >
+              <Shuffle className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                섞기
+              </span>
+            </motion.button>
+
             <motion.button
               whileTap={{ scale: 0.95 }}
               onClick={toggleHideAllMeanings}
-              className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+              className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
             >
               {hideAllMeanings ? (
-                <Eye className="w-3.5 h-3.5" style={{ color: theme.iconColor || '#8B5CF6' }} />
+                <Eye className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
               ) : (
-                <EyeOff className="w-3.5 h-3.5" style={{ color: theme.iconColor || '#8B5CF6' }} />
+                <EyeOff className="w-3 h-3" style={{ color: theme.iconColor || '#8B5CF6' }} />
               )}
-              <span style={{ fontSize: '12px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
-                {hideAllMeanings ? '모두 보기' : '모두 가리기'}
+              <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                {hideAllMeanings ? '보기' : '가리기'}
               </span>
             </motion.button>
 
@@ -813,11 +926,11 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={words.every(w => w.isExpanded) ? collapseAll : expandAll}
-                  className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1.5 whitespace-nowrap"
+                  className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
                 >
-                  <ChevronDown className={`w-3.5 h-3.5 transition-transform ${words.every(w => w.isExpanded) ? 'rotate-180' : ''}`} style={{ color: theme.iconColor || '#8B5CF6' }} />
-                  <span style={{ fontSize: '12px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
-                    {words.every(w => w.isExpanded) ? '모두 접기' : '모두 펼치기'}
+                  <ChevronDown className={`w-3 h-3 transition-transform ${words.every(w => w.isExpanded) ? 'rotate-180' : ''}`} style={{ color: theme.iconColor || '#8B5CF6' }} />
+                  <span style={{ fontSize: '11px', fontWeight: 600, color: theme.cardTextColor || '#091A7A' }}>
+                    {words.every(w => w.isExpanded) ? '접기' : '펼치기'}
                   </span>
                 </motion.button>
 
@@ -825,21 +938,21 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={toggleAllExampleLanguage}
-                  className="px-3 py-2 bg-white/90 backdrop-blur-lg rounded-xl border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
+                  className="px-2.5 py-1.5 bg-white/90 backdrop-blur-lg rounded-lg border border-white/40 shadow-sm flex items-center gap-1 whitespace-nowrap"
                 >
                   <span
                     style={{
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 700,
                       color: exampleLanguage === 'en' ? '#491B6D' : '#9CA3AF'
                     }}
                   >
                     EN
                   </span>
-                  <span style={{ fontSize: '11px', fontWeight: 600, color: '#9CA3AF' }}>|</span>
+                  <span style={{ fontSize: '10px', fontWeight: 600, color: '#9CA3AF' }}>|</span>
                   <span
                     style={{
-                      fontSize: '11px',
+                      fontSize: '10px',
                       fontWeight: 700,
                       color: exampleLanguage === 'kr' ? '#491B6D' : '#9CA3AF'
                     }}
@@ -852,18 +965,18 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                 <motion.button
                   whileTap={{ scale: 0.95 }}
                   onClick={handleBasketButtonClick}
-                  className={`px-3 py-2 backdrop-blur-lg rounded-xl border shadow-sm flex items-center gap-1.5 whitespace-nowrap ${
+                  className={`px-2.5 py-1.5 backdrop-blur-lg rounded-lg border shadow-sm flex items-center gap-1 whitespace-nowrap ${
                     basketCount > 0
                       ? 'bg-[#5B21B6] text-white border-[#5B21B6]'
                       : 'bg-white/90 text-[#5B21B6] border-white/40'
                   }`}
                 >
-                  <ShoppingCart className="w-3.5 h-3.5" />
-                  <span style={{ fontSize: '12px', fontWeight: 600 }}>
-                    장바구니
+                  <ShoppingCart className="w-3 h-3" />
+                  <span style={{ fontSize: '11px', fontWeight: 600 }}>
+                    추가
                   </span>
                   {basketCount > 0 && (
-                    <span style={{ fontSize: '10px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
+                    <span style={{ fontSize: '9px', fontWeight: 700 }} className="bg-white/20 px-1.5 py-0.5 rounded-full">
                       {basketCount}
                     </span>
                   )}
@@ -1171,41 +1284,101 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                             </motion.button>
                           </div>
 
-                          {/* 두 번째 줄: 눈 아이콘 + 뜻 + 토글 */}
+                          {/* 두 번째 줄: 눈 아이콘 + 뜻 + 편집 + 토글 */}
                           <div className="flex items-center gap-2.5">
                             <div className="w-6 flex-shrink-0" /> {/* 번호 자리 빈 공간 */}
-                            
-                            <div 
-                              className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                toggleMeaningReveal(word.id);
-                              }}
-                            >
-                              <Eye className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#9CA3AF' }} />
-                              <p 
-                                className="text-gray-600 transition-all duration-200"
-                                style={{ 
-                                  fontSize: '13px', 
-                                  fontWeight: 500,
-                                  color: '#6B7280',
-                                  lineHeight: 1.4,
-                                  filter: word.isMeaningRevealed ? 'blur(0px)' : 'blur(4px)',
-                                  userSelect: word.isMeaningRevealed ? 'auto' : 'none'
-                                }}
-                              >
-                                {word.meaning}
-                              </p>
-                            </div>
 
-                            {/* Expand/Collapse Toggle */}
-                            <motion.div
-                              animate={{ rotate: word.isExpanded ? 180 : 0 }}
-                              transition={{ duration: 0.2 }}
-                              className="flex-shrink-0 p-1"
-                            >
-                              <ChevronDown className="w-4 h-4" style={{ color: '#491B6D', opacity: 0.3 }} />
-                            </motion.div>
+                            {editingWordId === word.id ? (
+                              // Editing mode: input field + save/cancel buttons
+                              <>
+                                <input
+                                  type="text"
+                                  value={editingMeaning}
+                                  onChange={(e) => setEditingMeaning(e.target.value)}
+                                  onClick={(e) => e.stopPropagation()}
+                                  onKeyDown={(e) => {
+                                    e.stopPropagation();
+                                    if (e.key === 'Enter') {
+                                      saveEditedMeaning(word.id);
+                                    } else if (e.key === 'Escape') {
+                                      cancelEditingMeaning();
+                                    }
+                                  }}
+                                  className="flex-1 px-2 py-1 text-sm border border-purple-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-500"
+                                  style={{ fontSize: '13px', fontWeight: 500, color: '#6B7280' }}
+                                  autoFocus
+                                />
+                                <motion.button
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    saveEditedMeaning(word.id);
+                                  }}
+                                  className="flex-shrink-0 p-1.5 bg-green-500 rounded-lg hover:bg-green-600"
+                                >
+                                  <Check className="w-3.5 h-3.5 text-white" />
+                                </motion.button>
+                                <motion.button
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    cancelEditingMeaning();
+                                  }}
+                                  className="flex-shrink-0 p-1.5 bg-gray-400 rounded-lg hover:bg-gray-500"
+                                >
+                                  <X className="w-3.5 h-3.5 text-white" />
+                                </motion.button>
+                              </>
+                            ) : (
+                              // Normal mode: eye icon + meaning + edit button
+                              <>
+                                <div
+                                  className="flex items-center gap-1.5 flex-1 min-w-0 cursor-pointer"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    toggleMeaningReveal(word.id);
+                                  }}
+                                >
+                                  <Eye className="w-3.5 h-3.5 flex-shrink-0" style={{ color: '#9CA3AF' }} />
+                                  <p
+                                    className="text-gray-600 transition-all duration-200"
+                                    style={{
+                                      fontSize: '13px',
+                                      fontWeight: 500,
+                                      color: '#6B7280',
+                                      lineHeight: 1.4,
+                                      filter: word.isMeaningRevealed ? 'blur(0px)' : 'blur(4px)',
+                                      userSelect: word.isMeaningRevealed ? 'auto' : 'none'
+                                    }}
+                                  >
+                                    {word.meaning}
+                                  </p>
+                                </div>
+
+                                {/* Edit Button - Only show for normal/starred views with vocabularyId */}
+                                {vocabularyId && filterType !== 'graveyard' && filterType !== 'wrong-answers' && (
+                                  <motion.button
+                                    whileTap={{ scale: 0.9 }}
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      startEditingMeaning(word.id, word.meaning);
+                                    }}
+                                    className="flex-shrink-0 p-1"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#491B6D', opacity: 0.4 }} />
+                                  </motion.button>
+                                )}
+
+                                {/* Expand/Collapse Toggle */}
+                                <motion.div
+                                  animate={{ rotate: word.isExpanded ? 180 : 0 }}
+                                  transition={{ duration: 0.2 }}
+                                  className="flex-shrink-0 p-1"
+                                >
+                                  <ChevronDown className="w-4 h-4" style={{ color: '#491B6D', opacity: 0.3 }} />
+                                </motion.div>
+                              </>
+                            )}
                           </div>
 
                           {/* 세 번째 줄: 영어 예문 (항상 표시) */}

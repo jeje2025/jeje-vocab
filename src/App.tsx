@@ -1049,18 +1049,18 @@ export default function App() {
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen overflow-hidden flex flex-col"
       style={{
         background: currentScreen === 'word-list' && selectedSubject
           ? selectedSubject.id === 'starred'
-            ? 'linear-gradient(to bottom, #FFFEF5, #FFFEF8, #FFFFF9)'
+            ? '#FFFEF5'
             : selectedSubject.id === 'graveyard'
-            ? 'linear-gradient(to bottom, #FCFCFC, #FAFAFA, #F9F9F9)'
+            ? '#FCFCFC'
             : selectedSubject.id === 'wrong-answers'
-            ? 'linear-gradient(to bottom, #FFFAFA, #FFFCFC, #FFF9F9)'
-            : 'linear-gradient(to bottom, #D4C5FF, rgba(229, 217, 255, 0.95), white)'
-          : 'linear-gradient(to bottom, #D4C5FF, rgba(229, 217, 255, 0.95), white)'
+            ? '#FFFAFA'
+            : '#F2ECFE'
+          : '#F2ECFE'
       }}
     >
       {/* Admin Dashboard Overlay */}

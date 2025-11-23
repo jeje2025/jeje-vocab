@@ -100,7 +100,7 @@ export function Header(props: HeaderProps) {
               fontFamily: 'Inter, -apple-system, sans-serif',
               fontSize: '36px',
               letterSpacing: '-1.6px',
-              filter: 'drop-shadow(0 2px 4px rgba(9, 26, 122, 0.15))'
+              filter: 'drop-shadow(0 1px 1px rgba(9, 26, 122, 0.08))'
             }}
             onClick={handleLogoClick}
           >
@@ -121,22 +121,6 @@ export function Header(props: HeaderProps) {
               VOCA
             </span>
           </div>
-
-          {/* BETA Badge */}
-          <motion.span
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.15, duration: 0.5 }}
-            style={{
-              fontFamily: 'Inter, -apple-system, sans-serif',
-              fontSize: '9px',
-              fontWeight: 600,
-              color: '#4B5563',
-              letterSpacing: '0.5px'
-            }}
-          >
-            BETA 3.0
-          </motion.span>
         </motion.div>
 
         {/* Right - User & Logout */}
@@ -178,24 +162,21 @@ export function Header(props: HeaderProps) {
                 transition={{ delay: 0.3, duration: 0.5 }}
                 whileTap={{ scale: 0.95 }}
                 onClick={props.onDdayClick}
-                className="relative group"
               >
                 <div
-                  className="px-4 py-1.5 rounded-full relative overflow-hidden"
+                  className="px-3 py-1 rounded-xl"
                   style={{
-                    background: 'linear-gradient(135deg, #491B6D 0%, #7C3AED 100%)',
-                    boxShadow: '0 6px 20px rgba(73, 27, 109, 0.4), 0 2px 8px rgba(124, 58, 237, 0.3)',
+                    background: '#491B6D',
+                    boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)',
                   }}
                 >
                   <span
-                    className="relative"
                     style={{
                       fontFamily: 'Lexend, sans-serif',
-                      fontSize: '17px',
-                      fontWeight: 900,
+                      fontSize: '13px',
+                      fontWeight: 700,
                       color: 'white',
-                      letterSpacing: '0.5px',
-                      textShadow: '0 2px 8px rgba(0, 0, 0, 0.2)'
+                      letterSpacing: '0.3px',
                     }}
                   >
                     D-{calculateDday()}
@@ -214,7 +195,7 @@ export function Header(props: HeaderProps) {
             className="w-12 h-12 rounded-full flex items-center justify-center border-none"
             style={{
               background: 'white',
-              boxShadow: '0 10px 25px -5px rgba(9, 26, 122, 0.3), 0 8px 10px -6px rgba(9, 26, 122, 0.2)',
+              boxShadow: '0 1px 2px rgba(9, 26, 122, 0.08)',
               cursor: 'pointer'
             }}
             onClick={props.onLogout}

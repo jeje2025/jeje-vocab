@@ -392,7 +392,8 @@ export function VocabularyListSection({ onSelectVocabulary, onStartFlashcards, g
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: unitIndex * 0.1 }}
-              className="backdrop-blur-lg rounded-2xl overflow-hidden shadow-lg bg-gradient-to-br from-[#FDF2F8] to-[#FCE7F3]"
+              className="rounded-2xl overflow-hidden bg-gradient-to-br from-[#FDF2F8] to-[#FCE7F3]"
+              style={{ boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)' }}
             >
               {/* Unit Header - Clickable */}
               <motion.div
@@ -537,7 +538,8 @@ export function VocabularyListSection({ onSelectVocabulary, onStartFlashcards, g
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: (allUnits.length + sharedIndex) * 0.1 }}
-              className="bg-gradient-to-br from-[#F3E8FF] to-[#E9D5FF] backdrop-blur-lg rounded-2xl overflow-hidden shadow-lg border border-[#C4B5FD]/30"
+              className="bg-gradient-to-br from-[#F3E8FF] to-[#E9D5FF] rounded-2xl overflow-hidden border border-[#C4B5FD]/30"
+              style={{ boxShadow: '0 1px 2px rgba(0, 0, 0, 0.06)' }}
             >
               {/* Shared Vocabulary Header */}
               <motion.div

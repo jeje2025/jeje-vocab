@@ -86,7 +86,7 @@ export function SubjectsSection({ onSubjectClick, onCalendarClick, starredCount 
                   ? 'linear-gradient(135deg, rgba(219, 234, 254, 1) 0%, rgba(191, 219, 254, 1) 100%)'
                   : 'linear-gradient(135deg, rgba(173, 200, 255, 1) 0%, rgba(173, 200, 255, 0.9) 100%)',
                 borderColor: 'rgba(255, 255, 255, 0.3)',
-                boxShadow: '0 8px 32px -8px rgba(9, 26, 122, 0.2)'
+                boxShadow: '0 1px 2px rgba(0, 0, 0, 0.08)'
               }}
             >
               {/* Content Container - Icon + Text */}
@@ -112,7 +112,7 @@ export function SubjectsSection({ onSubjectClick, onCalendarClick, starredCount 
                         : subject.id === 'graveyard'
                         ? 'linear-gradient(135deg, #9CA3AF 0%, #6B7280 100%)'
                         : 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)',
-                      boxShadow: '0 2px 8px rgba(0, 0, 0, 0.15)'
+                      boxShadow: '0 1px 2px rgba(0, 0, 0, 0.1)'
                     }}
                   >
                     <span
@@ -144,7 +144,7 @@ export function SubjectsSection({ onSubjectClick, onCalendarClick, starredCount 
                     }}
                     className="w-7 h-7 flex items-center justify-center"
                     style={{
-                      filter: 'drop-shadow(0 4px 12px rgba(9, 26, 122, 0.12))'
+                      filter: 'drop-shadow(0 1px 1px rgba(0, 0, 0, 0.08))'
                     }}
                   >
                     {subject.icon}
@@ -152,7 +152,7 @@ export function SubjectsSection({ onSubjectClick, onCalendarClick, starredCount 
                 )}
 
                 {/* Subject Information */}
-                <div>
+                <div className="flex flex-col items-center">
                   {/* Subject Title */}
                   <h4
                     style={{
@@ -165,6 +165,21 @@ export function SubjectsSection({ onSubjectClick, onCalendarClick, starredCount 
                   >
                     {subject.name}
                   </h4>
+                  {/* Coming Soon Badge for Calendar */}
+                  {subject.id === 'calendar' && (
+                    <span
+                      style={{
+                        fontFamily: 'Lexend, sans-serif',
+                        fontWeight: 500,
+                        fontSize: '8px',
+                        lineHeight: '10px',
+                        color: '#6B7280',
+                        marginTop: '2px'
+                      }}
+                    >
+                      (준비중)
+                    </span>
+                  )}
                 </div>
               </div>
 

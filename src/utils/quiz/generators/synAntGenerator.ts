@@ -34,12 +34,16 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
       if (!mergedOptions.includes(value)) mergedOptions.push(value);
     });
 
-    if (mergedOptions.length < 8) return;
+    // Need at least 4 options total (minimum viable quiz)
+    if (mergedOptions.length < 4) return;
 
     const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
+    const targetOptionsCount = Math.min(8, mergedOptions.length);
+    const distractorCount = Math.max(0, targetOptionsCount - correctWords.length);
+
     const options = shuffleArray([
       ...correctWords,
-      ...shuffleArray(distractorOnly).slice(0, 8 - correctWords.length)
+      ...shuffleArray(distractorOnly).slice(0, distractorCount)
     ]);
 
     const correctIndexes = options.reduce<number[]>((acc, option, index) => {
