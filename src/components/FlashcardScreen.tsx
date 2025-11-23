@@ -527,7 +527,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
       {/* Flashcard Container */}
       <div className={`flex-1 flex justify-center ${hideHeader ? 'items-center' : 'items-start pt-2'}`} style={{ overflow: 'visible', maxWidth: '100vw', touchAction: 'auto' }}>
-        <div className={`w-full max-w-[380px] ${hideHeader ? 'h-[50vh]' : 'h-full max-h-[50vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
+        <div className={`w-full max-w-[min(90vw,380px)] sm:max-w-[min(85vw,450px)] md:max-w-[min(75vw,550px)] lg:max-w-[600px] ${hideHeader ? 'h-[50vh] sm:h-[55vh] md:h-[60vh]' : 'h-full max-h-[50vh] sm:max-h-[55vh] md:max-h-[60vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
           {/* Previous Card (Left) */}
           {currentIndex > 0 && (
             <motion.div 
@@ -654,13 +654,13 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
                   <div className="flex flex-col items-center gap-4 w-full">
                     <div className="w-16 h-1 bg-[#491B6D]/20" style={{ borderRadius: 'var(--radius-pill)' }} />
-                    
-                    <h2 className="text-[#091A7A] text-center px-4" style={{ fontSize: '40px', fontWeight: 700, lineHeight: 1.1 }}>
+
+                    <h2 className="text-[#091A7A] text-center px-4 text-[32px] sm:text-[40px] md:text-[48px] lg:text-[56px]" style={{ fontWeight: 700, lineHeight: 1.1 }}>
                       {currentCard.word}
                     </h2>
 
                     <div className="flex items-center gap-3">
-                      <p className="text-[#6B7280]" style={{ fontSize: '14px', fontWeight: 500 }}>
+                      <p className="text-[#6B7280] text-[12px] sm:text-[14px] md:text-[15px]" style={{ fontWeight: 500 }}>
                         {currentCard.pronunciation}
                       </p>
                       <motion.button
@@ -669,16 +669,16 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           e.stopPropagation();
                           handlePronunciation();
                         }}
-                        className="w-10 h-10 bg-[#491B6D]/10 rounded-full flex items-center justify-center"
+                        className="w-10 h-10 sm:w-12 sm:h-12 bg-[#491B6D]/10 rounded-full flex items-center justify-center"
                       >
-                        <Volume2 className="w-5 h-5 text-[#491B6D]" />
+                        <Volume2 className="w-5 h-5 sm:w-6 sm:h-6 text-[#491B6D]" />
                       </motion.button>
                     </div>
 
                     <div className="w-16 h-1 bg-[#491B6D]/20 mt-2" style={{ borderRadius: 'var(--radius-pill)' }} />
                   </div>
 
-                  <div className="absolute bottom-8 text-[#9CA3AF]" style={{ fontSize: '13px', fontWeight: 500 }}>
+                  <div className="absolute bottom-8 text-[#9CA3AF] text-[12px] sm:text-[13px]" style={{ fontWeight: 500 }}>
                     탭하여 뒤집기
                   </div>
                 </div>
@@ -725,14 +725,14 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                   <div className="flex flex-col gap-3 scrollable-content" style={{ touchAction: 'pan-y', overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
                     {/* Word Title (Small) */}
                     <div className="text-center pb-3 border-b border-gray-200">
-                      <h3 className="text-[#491B6D]" style={{ fontSize: '24px', fontWeight: 700 }}>
+                      <h3 className="text-[#491B6D] text-[20px] sm:text-[24px] md:text-[28px]" style={{ fontWeight: 700 }}>
                         {currentCard.word}
                       </h3>
                     </div>
 
                     {/* Meaning - 가운데 정렬, 크고 굵게 */}
                     <div className="text-center py-2">
-                      <p className="text-[#374151]" style={{ fontSize: '18px', fontWeight: 700, lineHeight: 1.3 }}>
+                      <p className="text-[#374151] text-[16px] sm:text-[18px] md:text-[20px]" style={{ fontWeight: 700, lineHeight: 1.3 }}>
                         {currentCard.meaning}
                       </p>
                     </div>
@@ -762,7 +762,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                         </button>
 
                         <div className="flex-1 bg-[#F3F4F6]/60 border border-[#E5E7EB]/40 rounded-lg px-3 py-2">
-                          <p className="text-[#4B5563]" style={{ fontSize: '12px', fontWeight: 500, lineHeight: 1.5 }}>
+                          <p className="text-[#4B5563] text-[11px] sm:text-[12px] md:text-[13px]" style={{ fontWeight: 500, lineHeight: 1.5 }}>
                             {exampleLanguage === 'en'
                               ? highlightWord(currentCard.example, currentCard.word)
                               : highlightWord(currentCard.translation || currentCard.example, currentCard.word)
@@ -775,7 +775,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                     {/* Etymology - WordListScreen 스타일 */}
                     {currentCard.etymology && (
                       <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] p-[10px]">
-                        <p className="text-[#4B5563]" style={{ fontSize: '11.5px', fontWeight: 500, lineHeight: 1.6 }}>
+                        <p className="text-[#4B5563] text-[11px] sm:text-[11.5px] md:text-[12px]" style={{ fontWeight: 500, lineHeight: 1.6 }}>
                           {currentCard.etymology}
                         </p>
                       </div>

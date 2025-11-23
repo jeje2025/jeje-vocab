@@ -105,6 +105,11 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
     filterType
   });
 
+  // 컴포넌트 마운트 시 스크롤 최상단으로 이동
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, []);
+
   // 백그라운드 스크롤 방지
   useEffect(() => {
     const originalStyle = window.getComputedStyle(document.body).overflow;
