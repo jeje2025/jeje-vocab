@@ -3,22 +3,33 @@ import { shuffleArray } from '../helpers';
 
 export const generateSynAntQuestions = (words: any[], limit = 12): Question[] => {
   const questions: Question[] = [];
-  const candidates = words.filter(
+
+  // First try: words with 2+ synonyms or antonyms
+  let candidates = words.filter(
     (word) =>
       word?.id && ((word?.synonyms?.length || 0) >= 2 || (word?.antonyms?.length || 0) >= 2)
   );
+
+  // Fallback: if not enough candidates, include words with at least 1 synonym or antonym
+  if (candidates.length < Math.min(limit, 3)) {
+    candidates = words.filter(
+      (word) =>
+        word?.id && ((word?.synonyms?.length || 0) >= 1 || (word?.antonyms?.length || 0) >= 1)
+    );
+  }
+
   const fallbackOptions = words.map((word) => word.word).filter(Boolean);
 
   shuffleArray(candidates).forEach((word) => {
     if (questions.length >= limit) return;
     const useSynonym =
-      (word.synonyms?.length || 0) >= 2 &&
-      ((word.antonyms?.length || 0) < 2 || Math.random() > 0.5);
+      (word.synonyms?.length || 0) >= 1 &&
+      ((word.antonyms?.length || 0) < 1 || Math.random() > 0.5);
     const pool = useSynonym ? (word.synonyms || []) : (word.antonyms || []);
-    if (pool.length < 2) return;
+    if (pool.length < 1) return;
 
     const targetCount = Math.min(pool.length, 3);
-    const requiredCount = Math.max(2, targetCount);
+    const requiredCount = Math.max(1, targetCount);
     const correctWords = shuffleArray(pool).slice(0, requiredCount);
 
     const distractorPool = shuffleArray(
@@ -34,8 +45,10 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
       if (!mergedOptions.includes(value)) mergedOptions.push(value);
     });
 
-    // Need at least 4 options total (minimum viable quiz)
-    if (mergedOptions.length < 4) return;
+    // Need at least 2 options total (minimum viable quiz with 1 correct answer)
+    // For single correct answer, we need at least 1 distractor
+    const minOptionsRequired = correctWords.length === 1 ? 2 : 3;
+    if (mergedOptions.length < minOptionsRequired) return;
 
     const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
     const targetOptionsCount = Math.min(8, mergedOptions.length);
