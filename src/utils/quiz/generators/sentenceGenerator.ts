@@ -15,8 +15,8 @@ export const generateSentenceQuestions = (words: any[], limit = 12): Question[] 
     const distractors = shuffleArray(
       wordPool.filter((entry) => entry && entry !== word.word)
     ).slice(0, 3);
-    // Need at least 1 distractor to make a valid quiz (2 options minimum)
-    if (distractors.length < 1) return;
+    // For a valid quiz, we need at least the correct answer (1 option minimum)
+    // But ideally we want at least 2 options total for a real choice
     const options = shuffleArray([word.word, ...distractors]);
 
     questions.push({

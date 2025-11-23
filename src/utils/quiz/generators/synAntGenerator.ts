@@ -11,7 +11,7 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
   );
 
   // Fallback: if not enough candidates, include words with at least 1 synonym or antonym
-  if (candidates.length < Math.min(limit, 3)) {
+  if (candidates.length < 1) {
     candidates = words.filter(
       (word) =>
         word?.id && ((word?.synonyms?.length || 0) >= 1 || (word?.antonyms?.length || 0) >= 1)
@@ -45,10 +45,9 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
       if (!mergedOptions.includes(value)) mergedOptions.push(value);
     });
 
-    // Need at least 2 options total (minimum viable quiz with 1 correct answer)
-    // For single correct answer, we need at least 1 distractor
-    const minOptionsRequired = correctWords.length === 1 ? 2 : 3;
-    if (mergedOptions.length < minOptionsRequired) return;
+    // Need at least 2 options total for a meaningful quiz
+    // But we'll be lenient - if we have at least the correct answer, allow it
+    if (mergedOptions.length < 2) return;
 
     const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
     const targetOptionsCount = Math.min(8, mergedOptions.length);
