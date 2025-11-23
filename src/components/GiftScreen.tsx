@@ -157,16 +157,21 @@ export function GiftScreen({ onBack, onSelectVocabulary }: GiftScreenProps) {
     setIsAdding(true);
     const selectedVocabsList = vocabularies.filter(v => selectedVocabs.has(v.id));
 
-    // Process all selected vocabularies
-    for (const vocab of selectedVocabsList) {
-      await onSelectVocabulary(vocab);
+    try {
+      // Process all selected vocabularies
+      for (const vocab of selectedVocabsList) {
+        await onSelectVocabulary(vocab);
+      }
+
+      setSelectedVocabs(new Set());
+
+      // Navigate back to home screen - this will trigger refresh
+      onBack();
+    } catch (error) {
+      console.error('Error adding vocabularies:', error);
+    } finally {
+      setIsAdding(false);
     }
-
-    setSelectedVocabs(new Set());
-    setIsAdding(false);
-
-    // Navigate back to home screen
-    onBack();
   };
 
   return (

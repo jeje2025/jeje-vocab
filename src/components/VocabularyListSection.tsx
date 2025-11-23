@@ -51,6 +51,13 @@ interface SharedVocabularyUnit {
 let vocabularyListCache: { myOwnVocabularies: any[]; mySharedVocabularies: any[]; timestamp: number } | null = null;
 let vocabularyListPromise: Promise<{ myOwnVocabularies: any[]; mySharedVocabularies: any[]; timestamp: number }> | null = null;
 
+// Export cache invalidation function
+export function invalidateVocabularyListSectionCache() {
+  console.log('[VocabularyListSection] Invalidating cache');
+  vocabularyListCache = null;
+  vocabularyListPromise = null;
+}
+
 export function VocabularyListSection({ onSelectVocabulary, onStartFlashcards, getAuthToken, onRefresh }: VocabularyListSectionProps) {
   const [myOwnVocabularies, setMyOwnVocabularies] = useState<any[]>([]);
   const [mySharedVocabularies, setMySharedVocabularies] = useState<any[]>([]);

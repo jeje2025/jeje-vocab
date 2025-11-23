@@ -29,7 +29,7 @@ import { SubjectsSection } from './components/SubjectsSection';
 import { ProgressCard } from './components/ProgressCard';
 import { CalendarWidget } from './components/CalendarWidget';
 import { BottomNavigation } from './components/BottomNavigation';
-import { VocabularyListSection } from './components/VocabularyListSection';
+import { VocabularyListSection, invalidateVocabularyListSectionCache } from './components/VocabularyListSection';
 import { QuizScreen } from './components/QuizScreen';
 import { GameMapQuizScreen } from './components/GameMapQuizScreen';
 import { QuizCompletionScreen } from './components/QuizCompletionScreen';
@@ -877,7 +877,13 @@ export default function App() {
         />;
       case 'gift':
         return <GiftScreen
-          onBack={navigateBack}
+          onBack={() => {
+            navigateBack();
+            // 홈으로 돌아갈 때 단어장 목록 새로고침
+            invalidateVocabularyListCache();
+            invalidateVocabularyListSectionCache();
+            wordLists.refreshMyVocabularies();
+          }}
           onSelectVocabulary={async (vocab) => {
             console.log('📚 Adding shared vocabulary:', vocab.title);
 
@@ -923,10 +929,6 @@ export default function App() {
 
               if (result.vocabulary) {
                 console.log('✅ Successfully added vocabulary to user collection');
-
-                // Invalidate cache and refresh
-                invalidateVocabularyListCache();
-                await wordLists.refreshMyVocabularies();
 
                 alert(`"${vocab.title}" 단어장이 추가되었습니다! (${selectedWordIds.length}개 단어)`);
               } else {
