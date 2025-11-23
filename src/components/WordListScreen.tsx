@@ -1291,7 +1291,21 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
 
                           {/* 두 번째 줄: 눈 아이콘 + 뜻 + 편집 + 토글 */}
                           <div className="flex items-center gap-2.5">
-                            <div className="w-6 flex-shrink-0" /> {/* 번호 자리 빈 공간 */}
+                            {/* 번호 자리에 편집 버튼 배치 */}
+                            <div className="w-6 flex-shrink-0 flex items-center justify-center">
+                              {vocabularyId && filterType !== 'graveyard' && filterType !== 'wrong-answers' && editingWordId !== word.id && (
+                                <motion.button
+                                  whileTap={{ scale: 0.9 }}
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    startEditingMeaning(word.id, word.meaning);
+                                  }}
+                                  className="p-0.5"
+                                >
+                                  <Edit3 className="w-3.5 h-3.5" style={{ color: '#491B6D', opacity: 0.4 }} />
+                                </motion.button>
+                              )}
+                            </div>
 
                             {editingWordId === word.id ? (
                               // Editing mode: input field + save/cancel buttons
@@ -1359,20 +1373,6 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
                                     {word.meaning}
                                   </p>
                                 </div>
-
-                                {/* Edit Button - Only show for normal/starred views with vocabularyId */}
-                                {vocabularyId && filterType !== 'graveyard' && filterType !== 'wrong-answers' && (
-                                  <motion.button
-                                    whileTap={{ scale: 0.9 }}
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      startEditingMeaning(word.id, word.meaning);
-                                    }}
-                                    className="flex-shrink-0 p-1"
-                                  >
-                                    <Edit3 className="w-3.5 h-3.5" style={{ color: '#491B6D', opacity: 0.4 }} />
-                                  </motion.button>
-                                )}
 
                                 {/* Expand/Collapse Toggle */}
                                 <motion.div
