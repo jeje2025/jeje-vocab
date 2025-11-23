@@ -9,11 +9,21 @@ import {
 } from './generators';
 
 export const buildQuestionBank = (words: any[]): Record<number, Question[]> | null => {
+  console.log('[QuestionBank] Building question bank with', words.length, 'words');
+
   if (!words || !words.length) return null;
 
   const normalizedWords = words
     .map(normalizeWordForQuiz)
     .filter((word): word is NormalizedWord => !!word);
+
+  console.log('[QuestionBank] Normalized', normalizedWords.length, 'words');
+  console.log('[QuestionBank] Sample normalized word:', normalizedWords[0]);
+  console.log('[QuestionBank] First word synonyms:', normalizedWords[0]?.synonyms);
+  console.log('[QuestionBank] First word antonyms:', normalizedWords[0]?.antonyms);
+  console.log('[QuestionBank] Words with synonyms:', normalizedWords.filter(w => w.synonyms?.length > 0).length);
+  console.log('[QuestionBank] Words with antonyms:', normalizedWords.filter(w => w.antonyms?.length > 0).length);
+
   if (!normalizedWords.length) return null;
 
   // Generate questions based on the number of words available
@@ -29,6 +39,14 @@ export const buildQuestionBank = (words: any[]): Record<number, Question[]> | nu
     { meaningQuestions, derivativeQuestions, synAntQuestions, sentenceQuestions },
     wordCount
   );
+
+  console.log('[QuestionBank] Generated questions:', {
+    meaning: meaningQuestions.length,
+    derivative: derivativeQuestions.length,
+    synAnt: synAntQuestions.length,
+    sentence: sentenceQuestions.length,
+    allInOne: allInOneQuestions.length
+  });
 
   return {
     1: meaningQuestions,

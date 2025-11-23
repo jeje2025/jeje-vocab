@@ -174,6 +174,11 @@ export const useVocabularyLoader = ({
       }
 
       console.log(`[useVocabularyLoader] ✅ Loaded ${allWords.length} words from vocabulary ${vocabId}`);
+      if (allWords.length > 0) {
+        console.log('[useVocabularyLoader] Sample raw word from API:', allWords[0]);
+        console.log('[useVocabularyLoader] Sample word synonyms:', allWords[0]?.synonyms);
+        console.log('[useVocabularyLoader] Sample word antonyms:', allWords[0]?.antonyms);
+      }
       vocabularyCacheRef.current[vocabId] = allWords;
       loadedVersionRef.current[vocabId] = version;
       return allWords;

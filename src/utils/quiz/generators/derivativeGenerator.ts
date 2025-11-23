@@ -5,7 +5,7 @@ export const generateDerivativeQuestions = (words: any[], limit = 12): Question[
   const derivativeEntries = words.flatMap((word: any) =>
     (word?.derivatives || []).map((der: any) => ({
       wordId: word.id,
-      root: word.word,
+      root: word.term || word.word,
       derivative: der?.word,
       meaning: der?.meaning
     }))

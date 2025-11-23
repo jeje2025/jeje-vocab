@@ -4,6 +4,20 @@ import { shuffleArray } from '../helpers';
 export const generateSynAntQuestions = (words: any[], limit = 12): Question[] => {
   const questions: Question[] = [];
 
+  // Debug: Check what data we have
+  const wordsWithSynAnt = words.filter(w =>
+    (w?.synonyms?.length || 0) > 0 || (w?.antonyms?.length || 0) > 0
+  );
+  console.log('[SynAnt] Total words:', words.length);
+  console.log('[SynAnt] Words with syn/ant:', wordsWithSynAnt.length);
+  if (wordsWithSynAnt.length > 0) {
+    console.log('[SynAnt] Sample:', wordsWithSynAnt.slice(0, 3).map(w => ({
+      word: w.term || w.word,
+      synonyms: w.synonyms,
+      antonyms: w.antonyms
+    })));
+  }
+
   // First try: words with 2+ synonyms or antonyms
   let candidates = words.filter(
     (word) =>
@@ -18,7 +32,9 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
     );
   }
 
-  const fallbackOptions = words.map((word) => word.word).filter(Boolean);
+  console.log('[SynAnt] Final candidates:', candidates.length);
+
+  const fallbackOptions = words.map((word) => word.term || word.word).filter(Boolean);
 
   shuffleArray(candidates).forEach((word) => {
     if (questions.length >= limit) return;
@@ -50,8 +66,21 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
     if (mergedOptions.length < 2) return;
 
     const distractorOnly = mergedOptions.filter((option) => !correctWords.includes(option));
+
+    // Ensure we have enough distractors - at least 2 total options
+    const minDistractors = Math.max(1, 2 - correctWords.length);
+    if (distractorOnly.length < minDistractors) {
+      console.log('[SynAnt] Skipping - not enough distractors:', {
+        word: word.word,
+        correctWords: correctWords.length,
+        distractors: distractorOnly.length,
+        minNeeded: minDistractors
+      });
+      return;
+    }
+
     const targetOptionsCount = Math.min(8, mergedOptions.length);
-    const distractorCount = Math.max(0, targetOptionsCount - correctWords.length);
+    const distractorCount = Math.max(minDistractors, targetOptionsCount - correctWords.length);
 
     const options = shuffleArray([
       ...correctWords,
@@ -63,16 +92,24 @@ export const generateSynAntQuestions = (words: any[], limit = 12): Question[] =>
       return acc;
     }, []);
 
+    const wordText = word.term || word.word;
+    console.log('[SynAnt] Generated question:', {
+      word: wordText,
+      correctCount: correctWords.length,
+      totalOptions: options.length
+    });
+
     questions.push({
       id: questions.length + 1,
       type: 'multi-select',
       wordId: word.id,
-      question: `'${word.word}'의 ${useSynonym ? '동의어' : '반의어'}를 모두 선택하세요 (${correctWords.length}개)`,
+      question: `'${wordText}'의 ${useSynonym ? '동의어' : '반의어'}를 모두 선택하세요 (${correctWords.length}개)`,
       options,
       correctAnswers: correctIndexes,
       explanation: `${useSynonym ? '동의어' : '반의어'}: ${correctWords.join(', ')}`
     });
   });
 
+  console.log('[SynAnt] Generated questions:', questions.length, '/', limit);
   return questions;
 };

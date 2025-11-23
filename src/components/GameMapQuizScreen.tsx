@@ -194,6 +194,29 @@ export function GameMapQuizScreen({
     });
   }, [vocabularyWords, graveyardWordIds, isGraveyardVocabulary]);
 
+  /**
+   * ==================== QUESTION BANK 구조 ====================
+   * buildQuestionBank()는 다음과 같은 구조의 객체를 반환합니다:
+   *
+   * {
+   *   1: Question[],  // 뜻 맞히기 (meaningQuestions) - generateMeaningQuestions()
+   *   2: Question[],  // 파생어 (derivativeQuestions) - generateDerivativeQuestions()
+   *   3: Question[],  // 동반의어 (synAntQuestions) - generateSynAntQuestions()
+   *   4: Question[],  // 문장 완성 (sentenceQuestions) - generateSentenceQuestions()
+   *   5: Question[]   // 종합 (allInOneQuestions) - generateAllInOneQuestions()
+   * }
+   *
+   * 각 스테이지 ID (1~5)는 questionBank[stageId]로 접근하여 해당 문제 배열을 가져옵니다.
+   *
+   * 주의: NormalizedWord 타입은 'term' 필드를 사용합니다 (word 아님!)
+   * - word.term: 단어
+   * - word.meaning: 뜻
+   * - word.synonyms: 동의어 배열
+   * - word.antonyms: 반의어 배열
+   * - word.derivatives: 파생어 배열
+   * - word.example: 예문
+   * ============================================================
+   */
   const dynamicQuestionBank = useMemo<Record<number, Question[]> | null>(
     () => buildQuestionBank(filteredWords),
     [filteredWords]
