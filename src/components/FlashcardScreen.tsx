@@ -99,6 +99,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
   const [isDragging, setIsDragging] = useState(false);
   const [exampleLanguage, setExampleLanguage] = useState<'en' | 'kr'>('en'); // EN/KR 토글 상태
   const [showBasketModal, setShowBasketModal] = useState(false);
+  const [playbackRate, setPlaybackRate] = useState(1.0); // 배속 조절
 
   // Word basket
   const {
@@ -108,7 +109,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
     clear: clearBasket,
     removeWord: removeBasketWord
   } = useWordBasket();
-  
+
   // Convert vocabularyWords to Flashcard format
   const convertedCards = vocabularyWords && vocabularyWords.length > 0
     ? vocabularyWords.map((word: any) => ({
@@ -190,7 +191,133 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
   const isStarred = starredWordIds.includes(currentCard?.id || '');
   const isInBasket = isBasketSelected(currentCard?.id || '');
   const autoPlayTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-  const isSpeakingRef = useRef(false);
+  const autoPlayStartedRef = useRef(false);
+  const isPlayingCardRef = useRef(false); // 현재 카드를 재생 중인지 추적
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null); // Reusable audio player for iOS
+
+  // Helper: stop any playing audio or speech synthesis
+  const stopAudio = () => {
+    if (currentAudioRef.current) {
+      try {
+        currentAudioRef.current.pause();
+        currentAudioRef.current.currentTime = 0;
+      } catch (e) {
+        // ignore
+      }
+      currentAudioRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+    }
+  };
+
+  // Helper: convert base64 MP3 to Blob
+  const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
+  };
+
+  // Fallback to browser speech synthesis
+  const fallbackSpeakText = (text: string, lang: string = 'en-US'): Promise<void> => {
+    return new Promise((resolve) => {
+      if (!('speechSynthesis' in window)) {
+        resolve();
+        return;
+      }
+
+      stopAudio();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = lang;
+      utterance.rate = playbackRate * (lang === 'ko-KR' ? 0.9 : 0.8);
+      utterance.pitch = 1;
+      utterance.volume = 1;
+
+      utterance.onend = () => resolve();
+      utterance.onerror = () => resolve();
+
+      window.speechSynthesis.speak(utterance);
+    });
+  };
+
+  // Google Cloud TTS fetch + play (HTMLAudioElement)
+  const speakText = async (text: string, lang: string = 'en-US'): Promise<void> => {
+    try {
+      stopAudio();
+
+      // Initialize reusable player if needed
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new Audio();
+      }
+      const audio = audioPlayerRef.current;
+
+      // iOS Audio Unlock Hack: Play silence immediately
+      // This enables the audio element to be used in async callbacks later
+      const silentAudio = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTSVMAAAAPAAADTGF2ZjU4LjIwLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAATEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OEAA8AAAAAb4AAACAAAAAAAAAAAAAA//OEAAAAAAAAb4AAACAAAAAAAAAAAAAA';
+      
+      try {
+        audio.src = silentAudio;
+        await audio.play();
+      } catch (e) {
+        // Ignore unlock errors (e.g. if already playing or not in gesture)
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500); // 빠르게 폴백하기 위한 타임아웃
+
+      const env = (import.meta as any).env;
+      const supabaseUrl = env?.VITE_SUPABASE_URL || `https://ooxinxuphknbfhbancgs.supabase.co`;
+      const supabaseKey = env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGlueHVwaGtuYmZoYmFuY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MDExMTQsImV4cCI6MjA3NDM3NzExNH0.lrbSZb3DTTWBkX3skjOHZ7N_WC_5YURB0ncDHFrwEzY';
+
+      const response = await fetch(`${supabaseUrl}/functions/v1/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ text, lang }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`TTS API error: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const audioBlob = base64ToBlob(data.audioContent, 'audio/mp3');
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      await new Promise<void>((resolve, reject) => {
+        audio.src = audioUrl;
+        audio.playbackRate = playbackRate;
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          currentAudioRef.current = null;
+          resolve();
+        };
+        audio.onerror = (e) => {
+          currentAudioRef.current = null;
+          reject(e);
+        };
+
+        audio.play().catch((err) => {
+          currentAudioRef.current = null;
+          reject(err);
+        });
+      });
+    } catch (error) {
+      console.error('TTS error, falling back to speech synthesis:', error);
+      await fallbackSpeakText(text, lang);
+    }
+  };
 
   // Handle basket toggle - open modal
   const handleBasketToggle = () => {
@@ -252,7 +379,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
     document.body.style.overflowY = 'hidden';
     document.documentElement.style.overflow = 'hidden';
     document.documentElement.style.overflowY = 'hidden';
-    
+
     return () => {
       document.body.style.overflow = originalStyle;
       document.body.style.overflowY = originalOverflowY;
@@ -265,12 +392,12 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
     const threshold = 50; // 모바일에서 더 쉽게 스와이프할 수 있도록 임계값 낮춤
     const velocity = info.velocity.x;
     const offset = info.offset.x;
-    
+
     // 속도 기반 스와이프 감지 (빠른 스와이프도 인식)
     const isFastSwipe = Math.abs(velocity) > 300;
     const isSwipeRight = offset > threshold || (isFastSwipe && velocity > 0);
     const isSwipeLeft = offset < -threshold || (isFastSwipe && velocity < 0);
-    
+
     if (isSwipeRight) {
       // Swipe right - previous card
       if (currentIndex > 0) {
@@ -292,119 +419,111 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
     setIsFlipped(!isFlipped);
   };
 
-  // TTS 재생 함수
-  const speakText = (text: string, lang: string = 'en-US'): Promise<void> => {
-    return new Promise((resolve) => {
-      if (!('speechSynthesis' in window)) {
-        console.warn('Speech synthesis not supported');
-        resolve();
-        return;
-      }
-
-      // 기존 재생 중지
-      window.speechSynthesis.cancel();
-
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = lang;
-      utterance.rate = lang === 'ko-KR' ? 0.9 : 0.8;
-      utterance.pitch = 1;
-      utterance.volume = 1;
-
-      utterance.onend = () => {
-        isSpeakingRef.current = false;
-        resolve();
-      };
-
-      utterance.onerror = (error) => {
-        console.error('Speech synthesis error:', error);
-        isSpeakingRef.current = false;
-        resolve();
-      };
-
-      isSpeakingRef.current = true;
-      window.speechSynthesis.speak(utterance);
-    });
-  };
-
   // 자동 재생 모드일 때 카드 재생
   useEffect(() => {
     if (!isAutoPlaying) {
-      // 자동 재생 중지 시 TTS도 중지
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopAudio();
       if (autoPlayTimeoutRef.current) {
         clearTimeout(autoPlayTimeoutRef.current);
       }
+      autoPlayStartedRef.current = false;
+      isPlayingCardRef.current = false;
       return;
     }
 
-    // 이전 타이머 정리
+    if (isPlayingCardRef.current) {
+      return;
+    }
+
     if (autoPlayTimeoutRef.current) {
       clearTimeout(autoPlayTimeoutRef.current);
     }
 
-    // 현재 카드 정보 가져오기
     const card = cards[currentIndex];
     if (!card) return;
 
-    // 현재 카드 자동 재생 함수 (영어 2번, 한글 1번)
     const playCurrentCard = async () => {
-      // 자동 재생이 중지되었는지 확인
-      if (!isAutoPlaying) return;
+      isPlayingCardRef.current = true;
 
-      // 영어 단어 2번 재생
-      await speakText(card.word, 'en-US');
-      await new Promise(resolve => setTimeout(resolve, 300)); // 간격
-
-      if (!isAutoPlaying) return; // 중지 확인
-
-      await speakText(card.word, 'en-US');
-      await new Promise(resolve => setTimeout(resolve, 500)); // 간격
-
-      if (!isAutoPlaying) return; // 중지 확인
-
-      // 한글 재생 전에 카드 뒤집기
-      setIsFlipped(true);
-      await new Promise(resolve => setTimeout(resolve, 600)); // 뒤집기 애니메이션 대기
-
-      if (!isAutoPlaying) return; // 중지 확인
-
-      // 한글 뜻 1번 재생
-      await speakText(card.meaning, 'ko-KR');
-      await new Promise(resolve => setTimeout(resolve, 800)); // 다음 카드로 넘어가기 전 대기
-
-      // 다음 카드로 이동
-      if (isAutoPlaying) {
-        if (currentIndex < cards.length - 1) {
-          setDirection(1);
-          setCurrentIndex(currentIndex + 1);
-          setIsFlipped(false);
-        } else {
-          // 마지막 카드면 처음으로 돌아가거나 정지
-          setIsAutoPlaying(false);
+      try {
+        if (!isAutoPlaying) {
+          isPlayingCardRef.current = false;
+          return;
         }
+
+        if (autoPlayStartedRef.current && currentIndex === 0) {
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          autoPlayStartedRef.current = false;
+
+          if (!isAutoPlaying) {
+            isPlayingCardRef.current = false;
+            return;
+          }
+
+          await speakText(card.word, 'en-US');
+        } else {
+          await speakText(card.word, 'en-US');
+          await new Promise(resolve => setTimeout(resolve, 300));
+
+          if (!isAutoPlaying) {
+            isPlayingCardRef.current = false;
+            return;
+          }
+
+          await speakText(card.word, 'en-US');
+        }
+
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        if (!isAutoPlaying) {
+          isPlayingCardRef.current = false;
+          return;
+        }
+
+        setIsFlipped(true);
+        await new Promise(resolve => setTimeout(resolve, 600));
+
+        if (!isAutoPlaying) {
+          isPlayingCardRef.current = false;
+          return;
+        }
+
+        await speakText(card.meaning, 'ko-KR');
+        await new Promise(resolve => setTimeout(resolve, 800));
+
+        isPlayingCardRef.current = false;
+
+        if (isAutoPlaying) {
+          if (currentIndex < cards.length - 1) {
+            setDirection(1);
+            setCurrentIndex(currentIndex + 1);
+            setIsFlipped(false);
+          } else {
+            setIsAutoPlaying(false);
+          }
+        }
+      } catch (error) {
+        console.error('Auto-play error:', error);
+        isPlayingCardRef.current = false;
+        setIsAutoPlaying(false);
       }
     };
 
-    // 약간의 지연 후 재생 시작 (애니메이션 완료 대기)
     autoPlayTimeoutRef.current = setTimeout(() => {
       playCurrentCard();
-    }, 500);
+    }, 100);
 
     return () => {
       if (autoPlayTimeoutRef.current) {
         clearTimeout(autoPlayTimeoutRef.current);
       }
     };
-  }, [isAutoPlaying, currentIndex, cards]);
+  }, [isAutoPlaying, currentIndex, cards, playbackRate]);
 
   // 컴포넌트 언마운트 시 정리
   useEffect(() => {
     return () => {
-      if ('speechSynthesis' in window) {
-        window.speechSynthesis.cancel();
-      }
+      stopAudio();
       if (autoPlayTimeoutRef.current) {
         clearTimeout(autoPlayTimeoutRef.current);
       }
@@ -415,22 +534,29 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
     speakText(currentCard.word, 'en-US');
   };
 
-  const handleAutoPlay = () => {
-    setIsAutoPlaying(true);
+  const handleAutoPlay = async () => {
+    const card = cards[currentIndex];
+    if (!card) return;
+
+    try {
+      setIsAutoPlaying(true);
+      autoPlayStartedRef.current = true;
+
+      await speakText(card.word, 'en-US');
+    } catch (error) {
+      console.error('Initial play error:', error);
+      toast.error('음성 재생에 실패했습니다');
+    }
   };
 
   const handlePause = () => {
     setIsAutoPlaying(false);
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopAudio();
   };
 
   const handleStop = () => {
     setIsAutoPlaying(false);
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-    }
+    stopAudio();
     setCurrentIndex(0);
     setIsFlipped(false);
   };
@@ -473,6 +599,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
   };
 
   return (
+    <>
     <div
       className={`flex flex-col ${hideHeader ? 'h-full' : 'min-h-screen h-screen fixed inset-0'}`}
       style={hideHeader ? {
@@ -526,23 +653,123 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
       )}
 
       {/* Flashcard Container */}
-      <div className={`flex-1 flex justify-center ${hideHeader ? 'items-center' : 'items-start pt-2'}`} style={{ overflow: 'visible', maxWidth: '100vw', touchAction: 'auto' }}>
-        <div className={`w-full max-w-[min(90vw,380px)] sm:max-w-[min(85vw,450px)] md:max-w-[min(75vw,550px)] lg:max-w-[600px] ${hideHeader ? 'h-[50vh] sm:h-[55vh] md:h-[60vh]' : 'h-full max-h-[50vh] sm:max-h-[55vh] md:max-h-[60vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
+      <div className={`flex-1 flex flex-col items-center justify-center ${hideHeader ? '' : ''}`} style={{ overflow: 'visible', maxWidth: '100vw', touchAction: 'auto', paddingBottom: hideHeader ? '0' : '0', gap: '1rem' }}>
+        {/* Action Buttons - Above the card */}
+        <div className="flex items-center justify-center gap-2">
+          {/* Playback Rate Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={() => {
+              const rates = [0.75, 1.0, 1.25, 1.5];
+              const currIdx = rates.indexOf(playbackRate);
+              const nextIdx = (currIdx + 1) % rates.length;
+              setPlaybackRate(rates[nextIdx]);
+            }}
+            className="w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all relative"
+            style={{
+              background: 'linear-gradient(135deg, #10B981 0%, #059669 100%)',
+            }}
+          >
+            <span className="text-white text-[10px] font-bold">{playbackRate}x</span>
+          </motion.button>
+
+          {/* Shuffle Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleShuffle}
+            className="w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all"
+            style={{
+              background: 'linear-gradient(135deg, #A78BFA 0%, #8B5CF6 100%)',
+            }}
+          >
+            <Shuffle className="w-4 h-4 text-white" />
+          </motion.button>
+
+          {/* Play Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleAutoPlay}
+            disabled={isAutoPlaying}
+            className={`w-11 h-11 rounded-full flex items-center justify-center shadow-md transition-all ${
+              isAutoPlaying ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            style={{
+              background: isAutoPlaying
+                ? 'linear-gradient(135deg, #D1D5DB 0%, #9CA3AF 100%)'
+                : 'linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%)',
+            }}
+          >
+            <Play className="w-5 h-5 text-white" style={{ fill: 'white' }} />
+          </motion.button>
+
+          {/* Pause Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handlePause}
+            disabled={!isAutoPlaying}
+            className={`w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all ${
+              !isAutoPlaying ? 'opacity-50 cursor-not-allowed' : ''
+            }`}
+            style={{
+              background: !isAutoPlaying
+                ? 'linear-gradient(135deg, #D1D5DB 0%, #9CA3AF 100%)'
+                : 'linear-gradient(135deg, #FCD34D 0%, #F59E0B 100%)',
+            }}
+          >
+            <Pause className="w-4 h-4 text-white" />
+          </motion.button>
+
+          {/* Stop Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleStop}
+            className="w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all"
+            style={{
+              background: 'linear-gradient(135deg, #F87171 0%, #EF4444 100%)',
+            }}
+          >
+            <Square className="w-4 h-4 text-white" style={{ fill: 'white' }} />
+          </motion.button>
+
+          {/* Shopping Cart Button */}
+          <motion.button
+            whileTap={{ scale: 0.95 }}
+            onClick={handleBasketToggle}
+            className="w-9 h-9 rounded-full flex items-center justify-center shadow-md transition-all relative"
+            style={{
+              background: 'linear-gradient(135deg, #9CA3AF 0%, #6B7280 100%)',
+            }}
+          >
+            <ShoppingCart className="w-4 h-4 text-white" />
+            {basketWords.length > 0 && (
+              <div
+                className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center shadow-sm"
+                style={{
+                  background: 'linear-gradient(135deg, #A78BFA 0%, #7C3AED 100%)',
+                }}
+              >
+                <span className="text-white" style={{ fontSize: '10px', fontWeight: 700 }}>{basketWords.length}</span>
+              </div>
+            )}
+          </motion.button>
+        </div>
+
+        <div className={`w-full max-w-[90vw] sm:max-w-[85vw] md:max-w-[80vw] ${hideHeader ? 'h-[60vh] sm:h-[65vh] md:h-[70vh]' : 'h-full max-h-[60vh] sm:max-h-[65vh] md:max-h-[70vh]'} relative flex items-center justify-center`} style={{ overflow: 'visible', touchAction: 'auto' }}>
           {/* Previous Card (Left) */}
           {currentIndex > 0 && (
-            <motion.div 
+            <motion.div
               className="absolute left-0 pointer-events-none z-0"
               initial={{ opacity: 0, x: -20 }}
               animate={{ opacity: 0.4, x: 0 }}
               transition={{ duration: 0.3 }}
-              style={{ 
+              style={{
                 width: '70%',
                 height: '85%',
                 transform: 'translateX(-75%) scale(0.7)',
                 transformOrigin: 'right center'
               }}
             >
-              <div 
+              <div
                 className="w-full h-full bg-white/90 backdrop-blur-lg shadow-2xl rounded-[20px] border-2 border-white/30"
                 style={{
                   background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%)'
@@ -553,19 +780,19 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
           {/* Next Card (Right) */}
           {currentIndex < cards.length - 1 && (
-            <motion.div 
+            <motion.div
               className="absolute right-0 pointer-events-none z-0"
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 0.4, x: 0 }}
               transition={{ duration: 0.3 }}
-              style={{ 
+              style={{
                 width: '70%',
                 height: '85%',
                 transform: 'translateX(75%) scale(0.7)',
                 transformOrigin: 'left center'
               }}
             >
-              <div 
+              <div
                 className="w-full h-full bg-white/90 backdrop-blur-lg shadow-2xl rounded-[20px] border-2 border-white/30"
                 style={{
                   background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(255, 255, 255, 0.85) 100%)'
@@ -634,7 +861,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                         scale: [1, 1.3, 1],
                         rotate: [0, -15, 15, 0],
                       } : {}}
-                      transition={{ 
+                      transition={{
                         duration: 0.5,
                         ease: "easeOut"
                       }}
@@ -683,7 +910,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                   </div>
                 </div>
 
-                {/* Back Side */}
+                {/* Back Side - (same as before, omitted for brevity...) */}
                 <div
                   className="absolute inset-0 bg-white/95 backdrop-blur-lg p-5 overflow-y-auto scrollbar-hide rounded-[20px] border border-white/20 shadow-2xl"
                   style={{
@@ -703,7 +930,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                         scale: [1, 1.3, 1],
                         rotate: [0, -15, 15, 0],
                       } : {}}
-                      transition={{ 
+                      transition={{
                         duration: 0.5,
                         ease: "easeOut"
                       }}
@@ -761,7 +988,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                           </span>
                         </button>
 
-                        <div className="flex-1 bg-[#F3F4F6]/60 border border-[#E5E7EB]/40 rounded-lg px-3 py-2">
+                        <div className="flex-1 bg-[#F3F4F6]/60 border border-[#E5E7EB]/40 rounded-lg px-3 py-1">
                           <p className="text-[#4B5563] text-[11px] sm:text-[12px] md:text-[13px]" style={{ fontWeight: 500, lineHeight: 1.5 }}>
                             {exampleLanguage === 'en'
                               ? highlightWord(currentCard.example, currentCard.word)
@@ -774,8 +1001,12 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
                     {/* Etymology - WordListScreen 스타일 */}
                     {currentCard.etymology && (
-                      <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] p-[10px]">
-                        <p className="text-[#4B5563] text-[11px] sm:text-[11.5px] md:text-[12px]" style={{ fontWeight: 500, lineHeight: 1.6 }}>
+                      <div className="bg-[#F3F4F6]/80 border border-[#E5E7EB]/60 rounded-[16px] px-[10px] py-[6px]">
+                        <div className="flex items-start gap-2 mb-1">
+                          <div className="w-1 h-1 rounded-full bg-[#8B5CF6] mt-2" />
+                          <span className="text-[#6B7280]" style={{ fontSize: '11px', fontWeight: 700 }}>어원 이야기</span>
+                        </div>
+                        <p className="text-[#4B5563] pl-3 text-[11px] sm:text-[11.5px] md:text-[12px]" style={{ fontWeight: 500, lineHeight: 1.6 }}>
                           {currentCard.etymology}
                         </p>
                       </div>
@@ -785,7 +1016,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                     <div className="space-y-2">
                       {/* Derivatives */}
                       {currentCard.derivatives && currentCard.derivatives.length > 0 && (
-                        <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
+                        <div className="bg-white/60 rounded-[16px] px-2 py-1.5 border border-[#E5E7EB]/50">
                           <div className="flex flex-wrap gap-x-2 gap-y-1">
                             {currentCard.derivatives.map((der, idx) => {
                               const derivativeId = `${currentCard.id}_derivative_${der.word}`;
@@ -819,11 +1050,11 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                         <div className="grid grid-cols-2 gap-2">
                           {/* Synonyms */}
                           {currentCard.synonyms && currentCard.synonyms.length > 0 && (
-                            <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
-                              <p className="text-[#6B7280] mb-1" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
+                            <div className="bg-white/60 rounded-[16px] px-2 py-1.5 border border-[#E5E7EB]/50">
+                              <p className="text-[#6B7280] mb-1 text-center" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
                                 동의어
                               </p>
-                              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                              <div className="flex flex-wrap gap-x-1 gap-y-1">
                                 {currentCard.synonyms.map((syn, idx) => {
                                   const synonymId = `${currentCard.id}_synonym_${syn.word}`;
                                   const isSelected = isBasketSelected(synonymId);
@@ -832,7 +1063,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                                       key={idx}
                                       whileTap={{ scale: 0.95 }}
                                       onClick={(e) => handleRelatedWordToggle(e, syn.word, syn.meaning || '', 'synonym')}
-                                      className={`inline-flex items-baseline gap-1 px-2 py-1 rounded-lg transition-colors ${
+                                      className={`inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded-lg transition-colors ${
                                         isSelected
                                           ? 'bg-[#7C3AED]/10 border border-[#7C3AED]'
                                           : 'hover:bg-gray-100 border border-transparent'
@@ -853,11 +1084,11 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
 
                           {/* Antonyms */}
                           {currentCard.antonyms && currentCard.antonyms.length > 0 && (
-                            <div className="bg-white/60 rounded-[16px] p-2 border border-[#E5E7EB]/50">
-                              <p className="text-[#6B7280] mb-1" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
+                            <div className="bg-white/60 rounded-[16px] px-2 py-1.5 border border-[#E5E7EB]/50">
+                              <p className="text-[#6B7280] mb-1 text-center" style={{ fontSize: '10px', fontWeight: 600, letterSpacing: '0.02em' }}>
                                 반의어
                               </p>
-                              <div className="flex flex-wrap gap-x-2 gap-y-1">
+                              <div className="flex flex-wrap gap-x-1 gap-y-1">
                                 {currentCard.antonyms.map((ant, idx) => {
                                   const antonymId = `${currentCard.id}_antonym_${ant.word}`;
                                   const isSelected = isBasketSelected(antonymId);
@@ -866,7 +1097,7 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
                                       key={idx}
                                       whileTap={{ scale: 0.95 }}
                                       onClick={(e) => handleRelatedWordToggle(e, ant.word, ant.meaning || '', 'antonym')}
-                                      className={`inline-flex items-baseline gap-1 px-2 py-1 rounded-lg transition-colors ${
+                                      className={`inline-flex items-baseline gap-1 px-1.5 py-0.5 rounded-lg transition-colors ${
                                         isSelected
                                           ? 'bg-[#7C3AED]/10 border border-[#7C3AED]'
                                           : 'hover:bg-gray-100 border border-transparent'
@@ -896,69 +1127,6 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
         </div>
       </div>
 
-      {/* Floating Control Buttons */}
-      <div className={`${hideHeader ? 'relative py-4' : 'absolute bottom-8'} left-0 right-0 z-[9999] flex items-center justify-center gap-3 px-4`} style={{ pointerEvents: 'auto' }}>
-        {/* Shuffle Button */}
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleShuffle}
-          className="w-14 h-14 bg-white/95 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl"
-        >
-          <Shuffle className="w-5 h-5 text-[#8B5CF6]" />
-        </motion.button>
-
-        {/* Play Button */}
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleAutoPlay}
-          disabled={isAutoPlaying}
-          className={`w-16 h-16 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl ${
-            isAutoPlaying
-              ? 'bg-white/50 opacity-50'
-              : 'bg-gradient-to-br from-[#8B5CF6] to-[#7C3AED]'
-          }`}
-        >
-          <Play className="w-7 h-7 text-white fill-white" />
-        </motion.button>
-
-        {/* Pause Button */}
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handlePause}
-          disabled={!isAutoPlaying}
-          className={`w-14 h-14 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl ${
-            !isAutoPlaying
-              ? 'bg-white/50 opacity-50'
-              : 'bg-white/95'
-          }`}
-        >
-          <Pause className="w-6 h-6 text-[#491B6D]" />
-        </motion.button>
-
-        {/* Stop Button */}
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleStop}
-          className="w-14 h-14 bg-white/95 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl"
-        >
-          <Square className="w-5 h-5 text-[#EF4444] fill-[#EF4444]" />
-        </motion.button>
-
-        {/* Shopping Cart Button */}
-        <motion.button
-          whileTap={{ scale: 0.9 }}
-          onClick={handleBasketToggle}
-          className="w-14 h-14 bg-white/95 backdrop-blur-lg rounded-full flex items-center justify-center shadow-xl relative"
-        >
-          <ShoppingCart className="w-6 h-6 text-[#6B7280]" />
-          {basketWords.length > 0 && (
-            <div className="absolute -top-1 -right-1 w-5 h-5 bg-[#7C3AED] rounded-full flex items-center justify-center">
-              <span className="text-white text-xs font-bold">{basketWords.length}</span>
-            </div>
-          )}
-        </motion.button>
-      </div>
-
       {/* Word Basket Modal */}
       <WordBasketModal
         open={showBasketModal}
@@ -980,5 +1148,6 @@ export function FlashcardScreen({ onBack, onBackToHome, vocabularyWords, onAddTo
         currentVocabularyTitle={vocabularyTitle}
       />
     </div>
+    </>
   );
 }

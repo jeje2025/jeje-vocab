@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState, useEffect } from 'react';
+import { memo, useCallback, useMemo, useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   Volume2,
@@ -98,6 +98,8 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
   const { getAuthToken } = useAuth();
   const [editingWordId, setEditingWordId] = useState<string | null>(null);
   const [editingMeaning, setEditingMeaning] = useState<string>('');
+  const audioPlayerRef = useRef<HTMLAudioElement | null>(null);
+  const currentAudioRef = useRef<HTMLAudioElement | null>(null);
   logWordList('🎯 Received props:', {
     vocabularyWords: vocabularyWords?.length || 0,
     hideActionButtons,
@@ -326,28 +328,97 @@ function WordListScreenComponent({ onBack, onBackToHome, vocabularyTitle, unitNa
     toggleWordStar(id);
   };
 
-  const handleTTS = (text: string) => {
-    if ('speechSynthesis' in window) {
-      // Stop any ongoing speech
-      window.speechSynthesis.cancel();
+  // TTS using Google Cloud TTS with fast fallback to speechSynthesis
+  const handleTTS = async (text: string) => {
+    try {
+      // Stop previous audio
+      if (currentAudioRef.current) {
+        currentAudioRef.current.pause();
+        currentAudioRef.current = null;
+      }
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
 
-      // Speak English 2 times
-      for (let i = 0; i < 2; i++) {
+      // Initialize reusable player
+      if (!audioPlayerRef.current) {
+        audioPlayerRef.current = new Audio();
+      }
+      const audio = audioPlayerRef.current;
+
+      // iOS Audio Unlock Hack: Play silence immediately
+      const silentAudio = 'data:audio/mp3;base64,SUQzBAAAAAAAI1RTSVMAAAAPAAADTGF2ZjU4LjIwLjEwMAAAAAAAAAAAAAAA//OEAAAAAAAAAAAAAAAAAAAAAAAASW5mbwAAAA8AAAAEAAABIADAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMD//////////////////////////////////////////////////////////////////wAAAP//OEAAAAAAAAAAAAAAAAAAAAAATEFNRTMuMTAwqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq//OEAA8AAAAAb4AAACAAAAAAAAAAAAAA//OEAAAAAAAAb4AAACAAAAAAAAAAAAAA';
+      try {
+        audio.src = silentAudio;
+        await audio.play();
+      } catch (e) {
+        // Ignore unlock errors
+      }
+
+      const supabaseUrl = env?.VITE_SUPABASE_URL || `https://ooxinxuphknbfhbancgs.supabase.co`;
+      const supabaseKey = env?.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im9veGlueHVwaGtuYmZoYmFuY2dzIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTg4MDExMTQsImV4cCI6MjA3NDM3NzExNH0.lrbSZb3DTTWBkX3skjOHZ7N_WC_5YURB0ncDHFrwEzY';
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 2500);
+
+      const responseEn = await fetch(`${supabaseUrl}/functions/v1/tts`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${supabaseKey}`,
+        },
+        body: JSON.stringify({ text, lang: 'en-US' }),
+        signal: controller.signal,
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!responseEn.ok) {
+        throw new Error(`TTS API error: ${responseEn.status}`);
+      }
+
+      const dataEn = await responseEn.json();
+      const audioBlobEn = base64ToBlob(dataEn.audioContent, 'audio/mp3');
+      const audioUrlEn = URL.createObjectURL(audioBlobEn);
+      
+      await new Promise<void>((resolve, reject) => {
+        audio.src = audioUrlEn;
+        currentAudioRef.current = audio;
+
+        audio.onended = () => {
+          currentAudioRef.current = null;
+          resolve();
+        };
+        audio.onerror = (e) => {
+          currentAudioRef.current = null;
+          reject(e);
+        };
+        audio.play().catch((err) => {
+          currentAudioRef.current = null;
+          reject(err);
+        });
+      });
+
+    } catch (error) {
+      console.error('TTS error:', error);
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
         const utteranceEn = new SpeechSynthesisUtterance(text);
         utteranceEn.lang = 'en-US';
         utteranceEn.rate = 0.8;
         window.speechSynthesis.speak(utteranceEn);
       }
-
-      // Speak Korean meaning 1 time
-      const word = words.find(w => w.word === text);
-      if (word) {
-        const utteranceKo = new SpeechSynthesisUtterance(word.meaning);
-        utteranceKo.lang = 'ko-KR';
-        utteranceKo.rate = 0.9;
-        window.speechSynthesis.speak(utteranceKo);
-      }
     }
+  };
+
+  const base64ToBlob = (base64: string, mimeType: string): Blob => {
+    const byteCharacters = atob(base64);
+    const byteNumbers = new Array(byteCharacters.length);
+    for (let i = 0; i < byteCharacters.length; i++) {
+      byteNumbers[i] = byteCharacters.charCodeAt(i);
+    }
+    const byteArray = new Uint8Array(byteNumbers);
+    return new Blob([byteArray], { type: mimeType });
   };
 
   const handleSwipeToGraveyard = (id: string) => {

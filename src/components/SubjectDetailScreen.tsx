@@ -351,7 +351,7 @@ export function SubjectDetailScreen({ subject, onBack, onStartQuiz, onLessonClic
                   scale: 1.01,
                   boxShadow: "0 25px 50px rgba(9, 26, 122, 0.3), 0 0 0 1px rgba(173, 200, 255, 0.4)"
                 }}
-                transition={{ duration: 0.3, ease: "easeOut" }}
+                // transition={{ duration: 0.3, ease: "easeOut" }}
               >
                 {/* Unit Header */}
                 <motion.button
@@ -415,7 +415,7 @@ export function SubjectDetailScreen({ subject, onBack, onStartQuiz, onLessonClic
                           scale: 1.02,
                           boxShadow: "0 8px 25px rgba(9, 26, 122, 0.15)"
                         }}
-                        transition={{ duration: 0.2 }}
+                        // transition={{ duration: 0.2 }}
                       >
                         {/* Subtle background pattern */}
                         <div className="absolute inset-0 bg-gradient-to-br from-[#ADC8FF]/3 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
